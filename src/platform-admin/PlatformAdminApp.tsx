@@ -657,6 +657,19 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     ...(attentionTenants ? [{ title: `${attentionTenants} tenant${attentionTenants === 1 ? '' : 's'} need attention`, detail: 'Review provisioning errors or inactive tenant states.', href: '/admin/tenants/', severity: 'Incident' }] : []),
   ];
   const meta = PLATFORM_PAGE_META[page];
+  const matchedPage = [
+    "overview",
+    "onboarding",
+    "jobs",
+    "incidents",
+    "support",
+    "settings-practice",
+    "settings-integrations",
+    "settings-staff",
+    "settings-templates",
+    "settings-audit",
+    "settings-roles",
+  ].includes(page);
 
   return (
     <div className="platform-admin app">
@@ -829,29 +842,11 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
           ))}
         </aside>
         <main className="min-w-0 p-5 lg:p-7">
-          <div className="platform-page-heading mb-6 flex items-center justify-between gap-3">
-            <Title title={meta.title} description={meta.description} />
-            {page === "overview" ? (
-              <div className="platform-overview-controls">
-                <label className="platform-date-range">
-                  <span>Date range</span>
-                  <select
-                    className="field"
-                    value={overviewDateRange}
-                    onChange={(event) => setOverviewDateRange(event.target.value)}
-                    aria-label="Date range"
-                  >
-                    <option>Last 24 hours</option>
-                    <option>Last 7 days</option>
-                    <option>Last 30 days</option>
-                  </select>
-                </label>
-                <a className="btn" href="/admin/onboarding/">
-                  + New tenant
-                </a>
-              </div>
-            ) : null}
-          </div>
+          {!matchedPage && (
+            <div className="platform-page-heading mb-6 flex items-center justify-between gap-3">
+              <Title title={meta.title} description={meta.description} />
+            </div>
+          )}
           {notice?.state === "ready" && (
             <p className="panel mb-5 break-all" role="status">
               {notice.message}
@@ -860,6 +855,30 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
 
           {page === "overview" && (
             <>
+              <div className="prototype-page-header">
+                <div>
+                  <h1>{meta.title}</h1>
+                  <p className="muted">{meta.description}</p>
+                </div>
+                <div className="prototype-header-controls">
+                  <label className="platform-date-range">
+                    <span>Date range</span>
+                    <select
+                      className="field"
+                      value={overviewDateRange}
+                      onChange={(event) => setOverviewDateRange(event.target.value)}
+                      aria-label="Date range"
+                    >
+                      <option>Last 24 hours</option>
+                      <option>Last 7 days</option>
+                      <option>Last 30 days</option>
+                    </select>
+                  </label>
+                  <a className="btn" href="/admin/onboarding/">
+                    + New tenant
+                  </a>
+                </div>
+              </div>
               <p className="platform-overview-note">
                 Platform views show tenant and system health only. Patient clinical and financial records are never displayed here.
               </p>
@@ -1257,6 +1276,13 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
           )}
 
           {page === "settings-integrations" && (
+            <>
+            <div className="prototype-page-header">
+              <div>
+                <h1>{meta.title}</h1>
+                <p className="muted">{meta.description}</p>
+              </div>
+            </div>
             <div className="grid gap-5 xl:grid-cols-2">
               <section className="panel overflow-auto">
                 <div className="prototype-section-head">
@@ -1371,6 +1397,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
                 )}
               </section>
             </div>
+            </>
           )}
 
           {PLATFORM_PROTOTYPE_PAGES.includes(page as typeof PLATFORM_PROTOTYPE_PAGES[number]) && (

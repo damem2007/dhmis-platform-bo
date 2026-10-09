@@ -47,6 +47,8 @@ export type PlatformPageModel = {
   configureRouting: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   recoverAdministrator: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   provision: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onboardingTarget: Organization | null;
+  setOnboardingTarget: Dispatch<SetStateAction<Organization | null>>;
   tenantSearch: string;
   setTenantSearch: Dispatch<SetStateAction<string>>;
   tenantStatusFilter: string;

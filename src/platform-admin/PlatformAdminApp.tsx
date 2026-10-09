@@ -75,6 +75,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const [onboardingRange, setOnboardingRange] = useState("Last 7 days");
   const [onboardingSearch, setOnboardingSearch] = useState("");
   const [onboardingStageFilter, setOnboardingStageFilter] = useState("all");
+  const [onboardingTarget, setOnboardingTarget] = useState<Organization | null>(null);
   const [supportScope, setSupportScope] = useState<"all" | "mine">("all");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(page.startsWith("settings-"));
@@ -314,6 +315,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
         slug: string;
         invitation?: { token: string };
       }>("/platform/organizations", {
+        organization_id: form.get("organization_id") || undefined,
         name: form.get("name"),
         slug: form.get("slug"),
         region: form.get("region"),
@@ -330,6 +332,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
       setNotice({
         message: `Tenant /${result.slug} provisioned. Initial invitation: ${result.invitation?.token || "already existed"}`,
         state: "ready"});
+      setOnboardingTarget(null);
       await load();
     } catch (reason) {
       setNotice({
@@ -714,6 +717,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     currentOnboardingPage, setOnboardingPage, supportScope, setSupportScope, integrationApprovals,
     currentIntegrationRequestPage, integrationRequestPages, integrationRequestPageSize,
     pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration, actionBusy,
+    onboardingTarget, setOnboardingTarget,
   };
 
   return (

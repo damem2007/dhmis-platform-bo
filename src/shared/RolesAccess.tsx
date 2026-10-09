@@ -89,6 +89,16 @@ export function RolesAccess({ domain }: { domain: Domain }) {
     setPermissions(await api<Page<Permission>>(`${prefix}/permissions?${query}`));
     setPermissionPage(page);
   }
+  async function loadPermissionRows(filters: Record<string, string>) {
+    const firstQuery = new URLSearchParams({ domain, page: '1', size: '50', ...filters });
+    const first = await api<Page<Permission>>(`${prefix}/permissions?${firstQuery}`);
+    const rows = [...first.items];
+    for (let page = 2; page <= first.pages; page += 1) {
+      const query = new URLSearchParams({ domain, page: String(page), size: '50', ...filters });
+      rows.push(...(await api<Page<Permission>>(`${prefix}/permissions?${query}`)).items);
+    }
+    return rows;
+  }
   async function loadRequests() { setRequests(await api<Page<ChangeRequest>>(`${prefix}/requests?page=1&size=25`)); }
   async function loadHistory() { setHistory(await api<Page<History>>(`${prefix}/history?page=1&size=25`)); }
   async function loadPolicy(page = policyPage, size = policySize) {
@@ -152,13 +162,38 @@ export function RolesAccess({ domain }: { domain: Domain }) {
       return next;
     });
   }
-  function setResourceLevel(resource: ResourceGroup, level: 'n' | 'r' | 'w') {
+  async function setResourceLevel(resource: ResourceGroup, level: 'n' | 'r' | 'w') {
     if (!selected || selected.locked) return;
-    setDraftGrants((current) => setResourceLevelDraft(current, resource, level));
+    setBusy(true);
+    try {
+      const rows = (await loadPermissionRows({ search: resource.key })).filter((permission) => permission.resource_key === resource.key);
+      const fullResource = { ...resource, permissions: rows.length ? rows : resource.permissions };
+      setDraftGrants((current) => setResourceLevelDraft(current, fullResource, level));
+      setMessage('Draft updated.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Permission draft could not be updated');
+    } finally {
+      setBusy(false);
+    }
   }
-  function setModuleLevel(module: ModuleGroup, level: 'n' | 'r' | 'w') {
+  async function setModuleLevel(module: ModuleGroup, level: 'n' | 'r' | 'w') {
     if (!selected || selected.locked) return;
-    setDraftGrants((current) => module.resources.reduce((draft, resource) => setResourceLevelDraft(draft, resource, level), current));
+    setBusy(true);
+    try {
+      const rows = await loadPermissionRows({ module: module.key });
+      const resources = [...rows.reduce((groups, permission) => {
+        const resource = groups.get(permission.resource_key) || { key: permission.resource_key, name: permission.resource_name, permissions: [] as Permission[] };
+        resource.permissions.push(permission);
+        groups.set(permission.resource_key, resource);
+        return groups;
+      }, new Map<string, ResourceGroup>()).values()];
+      setDraftGrants((current) => resources.reduce((draft, resource) => setResourceLevelDraft(draft, resource, level), current));
+      setMessage('Draft updated.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Module draft could not be updated');
+    } finally {
+      setBusy(false);
+    }
   }
   function cycleAction(permission: Permission, resource: ResourceGroup) {
     if (!selected || selected.locked || resourceLevel(resource, draftGrants) === 'n') return;

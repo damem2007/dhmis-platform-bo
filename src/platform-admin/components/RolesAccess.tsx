@@ -111,7 +111,7 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
   const [permissions, setPermissions] = useState<Page<Permission>>(emptyPage());
   const [catalogue, setCatalogue] = useState<Permission[]>([]);
   const [effectivePeople, setEffectivePeople] = useState<EffectivePerson[]>([]);
-  const [currentActor, setCurrentActor] = useState<{ id: string; name: string; role: string; is_bootstrap_operator?: boolean } | null>(null);
+  const [currentActor, setCurrentActor] = useState<{ id: string; name: string; role: string; role_id?: string | null; is_bootstrap_operator?: boolean } | null>(null);
   const [effectivePersonId, setEffectivePersonId] = useState('');
   const [requests, setRequests] = useState<Page<ChangeRequest>>(emptyPage());
   const [requestPage, setRequestPage] = useState(1);
@@ -191,7 +191,7 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
   }
   async function loadCurrentActor() {
     if (domain !== 'platform') return;
-    try { setCurrentActor(await api<{ id: string; name: string; role: string }>('/platform/auth/me')); }
+    try { setCurrentActor(await api<{ id: string; name: string; role: string; role_id?: string | null; is_bootstrap_operator?: boolean }>('/platform/auth/me')); }
     catch { setCurrentActor(null); }
   }
   async function loadRequests(page = requestPage, size = requestSize) { const result = await api<Page<ChangeRequest>>(`${prefix}/requests?page=${page}&size=${size}`); setRequests(result); setRequestPage(result.page); setRequestSize(result.size); }
@@ -468,7 +468,12 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
       const createdLabel = relativeTime(request.created_at);
       const expiresLabel = request.expires_at ? new Date(request.expires_at).toLocaleString() : 'expiry unavailable';
       const isMaker = currentActor?.id === request.maker_id;
-      const isBootstrapOperator = domain === 'platform' && currentActor?.is_bootstrap_operator === true;
+      const isBootstrapOperator = domain === 'platform' && (
+        currentActor?.is_bootstrap_operator === true
+        || currentActor?.role_id === 'platform-super-admin'
+        || currentActor?.role === 'Platform Super Admin'
+        || currentActor?.role === 'platform-super-admin'
+      );
       const canDecide = Boolean(currentActor) && (!isMaker || isBootstrapOperator);
       const canWithdraw = Boolean(currentActor) && isMaker;
       const eligibilityHint = !currentActor ? 'Your identity could not be loaded; approval actions are unavailable.' : isMaker && !isBootstrapOperator ? 'Only the bootstrap Platform Super Admin can approve its own request. You can withdraw it while it is pending.' : isMaker ? 'Bootstrap Platform Super Admin self-approval is enabled for system setup.' : 'Approval eligibility is enforced by the backend for this authorization domain.';

@@ -18,6 +18,11 @@ import {
   Building2,
   Globe2,
   ChevronDown,
+  PanelLeftClose,
+  PanelLeftOpen,
+  LifeBuoy,
+  Sun,
+  Moon,
   Plus,
   ArrowUpRight,
   ArrowDownRight,
@@ -140,6 +145,10 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const [onboardingSearch, setOnboardingSearch] = useState("");
   const [onboardingStageFilter, setOnboardingStageFilter] = useState("all");
   const [supportScope, setSupportScope] = useState<"all" | "mine">("all");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(page.startsWith("settings-"));
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => window.localStorage.getItem("dhmis.platform.theme") === "dark" ? "dark" : "light");
   //const [user, setUser] = useState<User | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -149,6 +158,13 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   useEffect(() => {
     setOnboardingPage(1);
   }, [onboardingSearch, onboardingStageFilter]);
+  useEffect(() => {
+    if (page.startsWith("settings-")) setSettingsOpen(true);
+  }, [page]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("dhmis.platform.theme", theme);
+  }, [theme]);
   useEffect(() => {
     function dismiss(event: MouseEvent | KeyboardEvent) {
       if (event instanceof KeyboardEvent && event.key !== "Escape") return;
@@ -461,7 +477,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   }, [page]);
 
   if (state.type === "loading")
-    return <div className="platform-auth-shell"><div className="platform-auth-card-wrap"><BrandLoader size={100} /></div></div>;
+    return <div className="platform-loading-screen"><BrandLoader size={72} /></div>;
   if (state.type === "error")
     return (
       <main className="platform-auth-shell">
@@ -683,7 +699,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   ].includes(page);
 
   return (
-    <div className="platform-admin app">
+    <div className={`platform-admin app${sidebarCollapsed ? " platform-sidebar-collapsed" : ""}`}>
       {isSandboxEnvironment && (
         <div className="platform-sandbox sand">
           <span><strong>Development sandbox</strong> · Synthetic records · no live payments, claims, or signatures</span>
@@ -696,7 +712,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
       )}
       <header className="platform-topbar top">
         <div className="platform-brand">
-          <strong>DHMIS</strong>
+          <img src="/assets/dhmis-logo-v2/svg/dhmis-lockup-admin-light.svg" alt="DHMIS Admin" />
           <span>DHMIS Platform · Production ▾</span>
         </div>
         <label className="platform-topbar-search">
@@ -714,6 +730,11 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
         </label>
         <div className="platform-topbar-spacer" />
         <div className="platform-topbar-actions">
+        <button type="button" className="platform-theme-toggle" aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`} title={`Use ${theme === "dark" ? "light" : "dark"} theme`} onClick={() => setTheme((value) => value === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}</button>
+        <div className="staff-help">
+          <button type="button" aria-haspopup="menu" aria-expanded={helpOpen} onClick={() => setHelpOpen((value) => !value)} className="platform-help-button"><LifeBuoy size={15} aria-hidden="true" /> Help</button>
+          {helpOpen && <div className="staff-help-menu" role="menu"><strong>Help &amp; support</strong><span>✓ All systems operational</span><button role="menuitem" onClick={() => setHelpOpen(false)}>Contact DHMIS support</button><button role="menuitem" onClick={() => setHelpOpen(false)}>Email support</button><button role="menuitem" onClick={() => setHelpOpen(false)}>Ask my clinic administrator</button><button role="menuitem" onClick={() => setHelpOpen(false)}>Guides &amp; how-tos</button><small>Please don’t include patient names or health details in a message. We’ll attach the page and time automatically.</small></div>}
+        </div>
         <ApprovalBell
           domain="platform"
           approvalsHref="/admin/settings/roles/?tab=approvals"
@@ -796,6 +817,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
           className="platform-sidebar side"
           aria-label="Platform administration"
         >
+          <button type="button" className="platform-sidebar-toggle" aria-label={sidebarCollapsed ? "Show navigation" : "Hide navigation"} title={sidebarCollapsed ? "Show navigation" : "Hide navigation"} onClick={() => setSidebarCollapsed((value) => !value)}>{sidebarCollapsed ? <PanelLeftOpen size={17} aria-hidden="true" /> : <PanelLeftClose size={17} aria-hidden="true" />}</button>
           <p>Platform</p>
           <a
             aria-current={page === "overview" ? "page" : undefined}
@@ -804,14 +826,14 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
             Overview
           </a>
           <p>Customers</p>
-          <button type="button" className="platform-nav-inert">Tenants</button>
+          <a aria-current={page === "tenants" ? "page" : undefined} href="/admin/tenants/">Tenants</a>
           <a
             aria-current={page === "onboarding" ? "page" : undefined}
             href="/admin/onboarding/"
           >
             Onboarding
           </a>
-          <button type="button" className="platform-nav-inert">Billing &amp; plans</button>
+          <a aria-current={page === "billing-plans" ? "page" : undefined} href="/admin/billing-plans/">Billing &amp; plans</a>
           <p>Operations</p>
           <a
             aria-current={page === "jobs" ? "page" : undefined}
@@ -832,16 +854,11 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
             Support
           </a>
           <p>Security</p>
-          <button type="button" className="platform-nav-inert">Platform audit</button>
-          <button type="button" className="platform-nav-inert">Feature flags</button>
+          <a aria-current={page === "platform-audit" ? "page" : undefined} href="/admin/platform-audit/">Platform audit</a>
+          <a aria-current={page === "feature-flags" ? "page" : undefined} href="/admin/feature-flags/">Feature flags</a>
           <p>Admin</p>
-          <a
-            aria-current={page.startsWith("settings-") ? "page" : undefined}
-            href="/admin/settings/"
-          >
-            Settings
-          </a>
-          {page.startsWith("settings-") && PLATFORM_SETTINGS_NAV.map(([key, label, href]) => (
+          <div className="platform-settings-parent"><div className="platform-settings-link"><a aria-current={page.startsWith("settings-") ? "page" : undefined} href="/admin/settings/">Settings</a><button type="button" aria-label={settingsOpen ? "Collapse settings" : "Expand settings"} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}><ChevronDown size={15} aria-hidden="true" /></button></div></div>
+          {(settingsOpen || page.startsWith("settings-")) && PLATFORM_SETTINGS_NAV.map(([key, label, href]) => (
             <a
               key={key}
               className="sub"

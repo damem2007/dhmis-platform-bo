@@ -486,9 +486,21 @@ img.fo-avatar { object-fit:cover; }
 .rbac-review form { margin-top:12px; }
 .rbac-review textarea { min-height:92px; resize:vertical; }
 .rbac-review button + button { margin-top:8px; }
-.rbac-policy-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
-.rbac-policy-grid > div,.rbac-policy-grid > label { min-height:76px; padding:12px; border:1px solid #dbe3df; border-radius:9px; background:#f8faf9; }
-.rbac-policy-grid > label:not(.label) { display:grid; grid-template-columns:auto 1fr; align-items:center; gap:9px; color:#27362f; font-size:13px; font-weight:650; }
+.rbac-policy-grid { display:grid; gap:0; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+.rbac-policy-grid > div,.rbac-policy-grid > label { min-height:76px; padding:12px 14px; border-bottom:1px solid var(--border); background:var(--surface); }
+.rbac-policy-grid > label:last-child,.rbac-policy-grid > div:last-child { border-bottom:0; }
+.rbac-policy-row { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.rbac-policy-row > div { min-width:0; }
+.rbac-policy-row strong,.rbac-policy-row span { display:block; }
+.rbac-policy-row strong { color:var(--ink); font-size:15px; }
+.rbac-policy-row span { margin-top:4px; color:var(--ink-muted); font-size:12px; line-height:1.4; }
+.rbac-policy-approvers { margin-top:10px; padding:12px 14px; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
+.rbac-approver-tags { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+.rbac-switch { width:42px; height:24px; flex:0 0 auto; appearance:none; border:1px solid var(--border); border-radius:999px; background:var(--paper-subtle); cursor:pointer; }
+.rbac-switch::after { content:""; display:block; width:18px; height:18px; margin:2px; border-radius:50%; background:var(--ink-muted); transition:transform .15s ease; }
+.rbac-switch:checked { border-color:var(--sage); background:var(--sage); }
+.rbac-switch:checked::after { background:var(--on); transform:translateX(18px); }
+.rbac-switch:disabled { opacity:.55; cursor:not-allowed; }
 .rbac-policy-grid strong,.rbac-policy-grid span { display:block; }
 .rbac-policy-grid strong { color:#087145; font-size:16px; }
 .rbac-policy-grid span { margin-top:4px; color:#54655d; font-size:12px; }
@@ -669,7 +681,7 @@ img.fo-avatar { object-fit:cover; }
   .rbac-add-role { grid-template-columns:1fr; }
   .rbac-draft-details { grid-template-columns:1fr; }
   .rbac-add-rule { grid-template-columns:1fr; }
-  .rbac-policy-grid { grid-template-columns:1fr 1fr; }
+  .rbac-policy-grid { grid-template-columns:1fr; }
   .cms-editor-header { align-items:stretch; flex-direction:column; }
   .cms-editor-header > div:first-child { margin-right:0; }
   .cms-publish-reason { grid-template-columns:1fr; }
@@ -696,3 +708,60 @@ img.fo-avatar { object-fit:cover; }
 .approval-bell-menu > button.is-waiting { color: var(--ink-muted); }
 .approval-bell-menu > p { padding: 1rem; color: var(--ink-muted); font-size: .85rem; }
 .approval-bell-menu > button.approval-bell-open { border-bottom: 0; color: var(--sage-deep); font-weight: 700; text-align: center; }
+
+/* Roles & access secondary views. Scoped to avoid affecting project-only pages. */
+.rbac-tab-content { display:grid; gap:14px; min-width:0; }
+.rbac-tab-content > h2 { margin:0; font-size:26px; }
+.rbac-tab-content > h3 { margin:8px 0 0; font-size:20px; }
+.rbac-tab-intro { margin:0; color:var(--ink-muted); font-size:16px; line-height:1.5; }
+.rbac-domain-toggle-wide { width:min(450px,100%); }
+.rbac-domain-toggle-wide button { flex:1; }
+.rbac-compare-panel { padding:0; }
+.rbac-compare-table { min-width:900px; }
+.rbac-compare-table th,.rbac-compare-table td { min-width:150px; text-align:center; vertical-align:middle; }
+.rbac-compare-table th:first-child,.rbac-compare-table td:first-child { min-width:320px; text-align:left; }
+.rbac-compare-table th { background:var(--paper-subtle); color:var(--ink-muted); }
+.rbac-role-link { border:0; background:none; color:var(--sage-deep); font-weight:750; cursor:pointer; }
+.rbac-compare-table td strong { display:block; font-size:17px; font-weight:650; color:var(--ink-muted); }
+.rbac-compare-table td strong.rbac-count-good { color:var(--sage-deep); }
+.rbac-progress { display:block; height:7px; margin:7px auto 0; overflow:hidden; border-radius:99px; background:var(--paper-subtle); }
+.rbac-progress > span { display:block; height:100%; border-radius:inherit; background:var(--sage); }
+.rbac-person-label { width:min(420px,100%); }
+.rbac-roles-held { display:grid; gap:0; padding:0; }
+.rbac-held-role { display:flex; align-items:center; gap:14px; padding:16px 20px; border-bottom:1px solid var(--border); }
+.rbac-held-role:last-child { border-bottom:0; }
+.rbac-held-role span:nth-child(2) { color:var(--ink-muted); }
+.rbac-held-role .prototype-badge { margin-left:auto; }
+.rbac-effective-table { padding:0; }
+.rbac-effective-table table { margin:0; }
+.rbac-effective-table td:last-child { width:240px; }
+.rbac-effective-check { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:12px; align-items:end; }
+.rbac-decision { margin-top:14px; padding:14px; border:1px solid var(--border); border-radius:10px; }
+.rbac-decision ol { margin:12px 0 0; padding-left:22px; }
+.rbac-approval-list { display:grid; gap:14px; }
+.rbac-approval-card { padding:22px; }
+.rbac-approval-card h3 { margin:0; font-size:20px; text-transform:capitalize; }
+.rbac-approval-head { display:flex; justify-content:space-between; gap:20px; }
+.rbac-approval-badges { display:flex; gap:6px; align-items:flex-start; white-space:nowrap; }
+.rbac-approval-card > p { margin:14px 0 0; }
+.rbac-comment { width:min(560px,100%); margin-top:16px; }
+.rbac-approval-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.rbac-approval-hint { color:#8a4b00!important; font-size:13px; }
+.rbac-empty-approval { padding:0 20px 20px; }
+.rbac-empty-approval-grid { display:grid; grid-template-columns:1.3fr 2fr .8fr 1fr 1fr 1fr; gap:14px; padding:18px 0; border-bottom:1px solid var(--border); color:var(--ink-muted); }
+.rbac-policy-content .prototype-section-head h2 { margin:0; }
+.rbac-history-card { padding:0 20px 20px; }
+.rbac-history-toolbar { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:16px 0; border-bottom:1px solid var(--border); }
+.rbac-history-toolbar .field { width:80px; }
+.rbac-history-list { display:grid; }
+.rbac-history-version { display:flex; justify-content:space-between; gap:18px; padding:18px 0; border-bottom:1px solid var(--border); }
+.rbac-history-version h3 { margin:0; font-size:18px; }
+.rbac-history-version p { margin:5px 0 0; }
+.rbac-history-actions { display:flex; align-items:flex-start; gap:10px; white-space:nowrap; }
+@media (max-width:700px) {
+  .rbac-effective-check { grid-template-columns:1fr; }
+  .rbac-approval-head,.rbac-history-version { flex-direction:column; }
+  .rbac-approval-badges { white-space:normal; }
+  .rbac-empty-approval-grid { min-width:700px; }
+  .rbac-empty-approval { overflow:auto; }
+}

@@ -55,7 +55,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   });
   const [notice, setNotice] = useState<Notice|null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get("tenant") || "");
   const [tenantSearch, setTenantSearch] = useState("");
   const [tenantStatusFilter, setTenantStatusFilter] = useState("all");
   const [tenantPlanFilter, setTenantPlanFilter] = useState("all");
@@ -320,6 +320,10 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
         slug: form.get("slug"),
         region: form.get("region"),
         location_name: form.get("location"),
+        location_address: form.get("location_address"),
+        location_latitude: form.get("location_latitude") ? Number(form.get("location_latitude")) : null,
+        location_longitude: form.get("location_longitude") ? Number(form.get("location_longitude")) : null,
+        location_osm_place_id: form.get("location_osm_place_id"),
         admin_name: form.get("admin_name"),
         admin_email: form.get("admin_email"),
         visibility: "organization",
@@ -392,8 +396,18 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     if (actionBusy) return;
     setActionBusy(`activate:${organizationId}`);
     try {
-      await api(`/platform/organizations/${organizationId}/activate`, {}, "POST");
-      setNotice({ message: "Tenant activated and available for routing.", state: "ready" });
+      const result = await api<{ status: string; detail?: string; request?: { id: string } }>(
+        `/platform/organizations/${organizationId}/activate`,
+        { reason: "Activate tenant after onboarding" },
+        "POST",
+      );
+      if (result.status === "approval_required") {
+        setNotice({ message: "Activation request submitted for approval.", state: "ready" });
+      } else if (result.status === "incomplete") {
+        setNotice({ message: result.detail || "Complete tenant setup before activation.", state: "ready" });
+      } else {
+        setNotice({ message: "Tenant activated and available for routing.", state: "ready" });
+      }
       await load();
     } catch (reason) {
       setNotice({

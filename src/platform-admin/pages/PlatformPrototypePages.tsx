@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../lib/api";
 import { RolesAccess } from "../components/RolesAccess";
+import { LoadingOverlay } from "../components/LoadingOverlay";
 import type { PlatformPage } from "../pageRegistry";
 
 type PrototypePage = Exclude<PlatformPage, "overview" | "tenants" | "onboarding" | "support" | "settings-integrations">;
@@ -81,6 +82,7 @@ function normalizeJobsData(payload: unknown): JobsData {
 }
 function Jobs() {
   const [data, setData] = useState<JobsData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [queue, setQueue] = useState("all");
   const [status, setStatus] = useState("all");
@@ -89,12 +91,14 @@ function Jobs() {
   const pageSize = 10;
   useEffect(() => {
     let active = true;
+    setLoading(true);
     api<unknown>("/platform/jobs?include_tenants=false")
       .then((payload) => { if (active) setData(normalizeJobsData(payload)); })
-      .catch((e) => { if (active) setMessage(e instanceof Error ? e.message : "Job status could not be loaded"); });
+      .catch((e) => { if (active) setMessage(e instanceof Error ? e.message : "Job status could not be loaded"); })
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
-  if (!data) return <ErrorMessage message={message || "Loading worker and queue status…"} />;
+  if (!data) return <><LoadingOverlay label="Loading jobs & queues…" detail="Checking worker health and queue status." /><ErrorMessage message={message} /></>;
   const rows = data.recent.filter((row) => {
     const matchesQueue = queue === "all" || row.kind === queue;
     const matchesStatus = status === "all" || row.status === status;
@@ -105,6 +109,7 @@ function Jobs() {
   const visible = rows.slice((Math.min(page, pages) - 1) * pageSize, Math.min(page, pages) * pageSize);
   const setNotice = (label: string) => setMessage(`${label} is not exposed by the current queue service.`);
   return <>
+    {loading && <LoadingOverlay label="Loading jobs & queues…" detail="Refreshing worker health and queue status." />}
     <PageHeader title="Jobs & queues" description="Background processing across every tenant.">
       <div className="prototype-segmented scope-toggle" aria-label="Job scope"><button type="button" className={jobScope === "all" ? "active" : ""} aria-pressed={jobScope === "all"} onClick={() => { setJobScope("all"); setPage(1); }}>All jobs</button><button type="button" className={jobScope === "mine" ? "active" : ""} aria-pressed={jobScope === "mine"} title="Show jobs currently queued or processing" onClick={() => { setJobScope("mine"); setPage(1); }}>My queue</button></div>
       <label className="prototype-inline-field">Queue<select className="field" value={queue} onChange={(event) => { setQueue(event.target.value); setPage(1); }}><option value="all">All queues</option>{Array.from(new Set(data.recent.map((row) => row.kind))).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
@@ -295,7 +300,22 @@ function PlatformStaff() {
 }
 
 type Template = { name: string; channel: string; subject: string; body: string; active: boolean };
-function Templates() { const [items, setItems] = useState<Record<string, Template>>({}); const [key, setKey] = useState(""); const [message, setMessage] = useState(""); useEffect(() => { api<Record<string, Template>>("/platform/communication-templates").then((r) => { setItems(r); setKey(Object.keys(r)[0] || ""); }).catch((e) => setMessage(e instanceof Error ? e.message : "Templates could not be loaded")); }, []); const item = items[key]; if (!item) return <ErrorMessage message={message || "Loading platform message templates…"} />; const update = (patch: Partial<Template>) => setItems({ ...items, [key]: { ...item, ...patch } }); async function save() { try { update(await api<Template>(`/platform/communication-templates/${key}`, item, "PUT")); setMessage("Template saved."); } catch (e) { setMessage(e instanceof Error ? e.message : "Template save failed"); } } return <><ErrorMessage message={message} /><div className="prototype-template-layout"><aside className="panel prototype-template-list">{Object.entries(items).map(([k, t]) => <button key={k} aria-current={k === key ? "page" : undefined} onClick={() => setKey(k)}><strong>{t.name}</strong><span>{t.channel} · {t.active ? "Active" : "Inactive"}</span></button>)}</aside><section className="panel"><div className="prototype-form-grid"><label className="label">Channel<select className="field" value={item.channel} onChange={(e) => update({ channel: e.target.value })}><option value="email">Email</option><option value="sms">SMS</option></select></label><label className="label">Subject<input className="field" value={item.subject} onChange={(e) => update({ subject: e.target.value })} /></label><label className="label">State<select className="field" value={item.active ? "active" : "inactive"} onChange={(e) => update({ active: e.target.value === "active" })}><option value="active">Active</option><option value="inactive">Inactive</option></select></label></div><label className="label">Message<textarea className="field min-h-40" value={item.body} onChange={(e) => update({ body: e.target.value })} /></label><div className="prototype-token-row"><span>{"{{patient_first_name}}"}</span><span>{"{{recipient_name}}"}</span><span>{"{{clinic_name}}"}</span><span>{"{{due_date}}"}</span><span>{"{{invitation_link}}"}</span><span>{"{{reset_link}}"}</span></div><h2 className="mt-5 font-semibold">Preview</h2><div className="prototype-email-preview"><strong>{item.subject}</strong><p className="whitespace-pre-wrap">{item.body}</p></div><button className="btn mt-4" onClick={() => void save()}>Save template</button></section></div></>; }
+const templateVariables = ['clinic_name', 'clinic_phone', 'patient_first_name', 'provider_name', 'appointment_date', 'appointment_time', 'installment_amount', 'due_date', 'plan_balance', 'recipient_name', 'role', 'tenant_slug', 'platform_name', 'invitation_expires_at', 'invitation_expires_in', 'invitation_link', 'reset_link'] as const;
+const templateSamples: Record<(typeof templateVariables)[number], string> = {
+  clinic_name: 'Harbour Dental', clinic_phone: '(604) 555-0182', patient_first_name: 'Avery', provider_name: 'Dr. Jordan Lee', appointment_date: 'October 24', appointment_time: '1:00 PM', installment_amount: '$60.00', due_date: 'September 30', plan_balance: '$120.00', recipient_name: 'Dami', role: 'super admin', tenant_slug: 'smile', platform_name: 'DHMIS Platform', invitation_expires_at: 'October 10, 2026 at 10:00 AM UTC', invitation_expires_in: '24 hours', invitation_link: 'https://admin.smile.dhmis.local:5175/?invite=example-token', reset_link: 'https://admin.smile.dhmis.local:5175/?reset=example-token',
+};
+function renderTemplateSample(value: string) { return Object.entries(templateSamples).reduce((result, [variable, sample]) => result.replaceAll(`{{${variable}}}`, sample), value); }
+function Templates() {
+  const [items, setItems] = useState<Record<string, Template>>({});
+  const [key, setKey] = useState('');
+  const [message, setMessage] = useState('');
+  useEffect(() => { api<Record<string, Template>>('/platform/communication-templates').then((result) => { setItems(result); setKey(Object.keys(result)[0] || ''); }).catch((error) => setMessage(error instanceof Error ? error.message : 'Templates could not be loaded')); }, []);
+  const item = items[key];
+  if (!item) return <ErrorMessage message={message || 'Loading platform message templates…'} />;
+  const update = (patch: Partial<Template>) => setItems({ ...items, [key]: { ...item, ...patch } });
+  async function save() { try { update(await api<Template>(`/platform/communication-templates/${key}`, item, 'PUT')); setMessage('Template saved.'); } catch (error) { setMessage(error instanceof Error ? error.message : 'Template save failed'); } }
+  return <><ErrorMessage message={message} /><div className="prototype-template-layout"><aside className="panel prototype-template-list">{Object.entries(items).map(([templateKey, template]) => <button key={templateKey} aria-current={templateKey === key ? 'page' : undefined} onClick={() => setKey(templateKey)}><strong>{template.name}</strong><span>{template.channel} · {template.active ? 'Active' : 'Inactive'}</span></button>)}</aside><section className="panel"><div className="prototype-form-grid"><label className="label">Channel<select className="field" value={item.channel} onChange={(event) => update({ channel: event.target.value })}><option value="email">Email</option><option value="sms">SMS</option></select></label><label className="label">Subject<input className="field" value={item.subject} onChange={(event) => update({ subject: event.target.value })} /></label><label className="label">State<select className="field" value={item.active ? 'active' : 'inactive'} onChange={(event) => update({ active: event.target.value === 'active' })}><option value="active">Active</option><option value="inactive">Inactive</option></select></label></div><label className="label">Message<textarea className="field min-h-40" value={item.body} onChange={(event) => update({ body: event.target.value })} /></label><div className="prototype-token-row">{templateVariables.map((variable) => <button type="button" key={variable} onClick={() => update({ body: `${item.body}${item.body.endsWith(' ') || !item.body ? '' : ' '}{{${variable}}}` })}>{`{{${variable}}}`}</button>)}</div><h2 className="mt-5 font-semibold">Preview</h2><div className="prototype-email-preview"><strong>{renderTemplateSample(item.subject)}</strong><p className="whitespace-pre-wrap">{renderTemplateSample(item.body)}</p></div><button className="btn mt-4" onClick={() => void save()}>Save template</button></section></div></>;
+}
 
 function Roles() { return <RolesAccess domain="platform" />; }
 

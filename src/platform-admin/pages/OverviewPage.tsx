@@ -175,7 +175,7 @@ export function OverviewPage({ model }: { model: PlatformPageModel }) {
                   <td><span className={`prototype-badge prototype-badge-${statusTone}`}>{organization.status}</span></td>
                   <td><span className={`prototype-badge prototype-badge-${healthTone}`}>{organization.last_error ? "Degraded" : "Healthy"}</span></td>
                   <td>—</td>
-                  <td><button className="btn-secondary" onClick={() => setSelectedId(organization.id)}>Open tenant</button></td>
+                  <td><button className="btn-secondary" onClick={() => window.location.assign(`/admin/tenants/?tenant=${encodeURIComponent(organization.id)}`)}>Open tenant</button></td>
                 </tr>
               );
             })}

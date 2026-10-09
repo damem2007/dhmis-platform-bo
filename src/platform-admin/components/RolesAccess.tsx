@@ -468,15 +468,15 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
       const createdLabel = relativeTime(request.created_at);
       const expiresLabel = request.expires_at ? new Date(request.expires_at).toLocaleString() : 'expiry unavailable';
       const isMaker = currentActor?.id === request.maker_id;
-      const isBootstrapOperator = domain === 'platform' && (
+      const isPlatformSuperAdmin = domain === 'platform' && (
         currentActor?.is_bootstrap_operator === true
         || currentActor?.role_id === 'platform-super-admin'
         || currentActor?.role === 'Platform Super Admin'
         || currentActor?.role === 'platform-super-admin'
       );
-      const canDecide = Boolean(currentActor) && (!isMaker || isBootstrapOperator);
+      const canDecide = Boolean(currentActor) && (!isMaker || isPlatformSuperAdmin);
       const canWithdraw = Boolean(currentActor) && isMaker;
-      const eligibilityHint = !currentActor ? 'Your identity could not be loaded; approval actions are unavailable.' : isMaker && !isBootstrapOperator ? 'Only the bootstrap Platform Super Admin can approve its own request. You can withdraw it while it is pending.' : isMaker ? 'Bootstrap Platform Super Admin self-approval is enabled for system setup.' : 'Approval eligibility is enforced by the backend for this authorization domain.';
+      const eligibilityHint = !currentActor ? 'Your identity could not be loaded; approval actions are unavailable.' : isMaker && !isPlatformSuperAdmin ? 'Only another eligible platform operator can approve this request. You can withdraw it while it is pending.' : isMaker ? 'Platform Super Admin self-approval is enabled for system setup.' : 'Approval eligibility is enforced by the backend for this authorization domain.';
       return <article className="panel rbac-approval-card" key={request.id}>
         <div className="rbac-approval-head"><div><h3>{title}</h3><p className="muted">{request.break_glass ? 'Break-glass action' : 'Role or permission change'} · {domain} · by {makerLabel} · {createdLabel} · <time dateTime={request.expires_at} title={expiresLabel}>expires {expiresLabel}</time></p></div><div className="rbac-approval-badges"><span className={`prototype-badge prototype-badge-${request.status === 'pending' ? 'warn' : tone(request.status)}`}>{request.status === 'pending' ? 'Pending approval' : request.status}</span><span className={`prototype-badge prototype-badge-${request.risk >= 4 ? 'danger' : 'warn'}`}>{riskLabel} risk</span></div></div>
         <p><strong>Reason:</strong> {request.reason || '—'}</p>

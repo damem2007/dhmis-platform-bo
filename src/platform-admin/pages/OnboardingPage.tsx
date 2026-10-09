@@ -1,4 +1,7 @@
 import { Field } from "../components/Fields";
+import { LocationAutocomplete } from "../components/LocationAutocomplete";
+import { LoadingOverlay } from "../components/LoadingOverlay";
+import { useState } from "react";
 import type { PlatformPageModel } from "../types";
 
 export function OnboardingPage({ model }: { model: PlatformPageModel }) {
@@ -19,8 +22,15 @@ export function OnboardingPage({ model }: { model: PlatformPageModel }) {
     pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration, actionBusy,
     onboardingTarget, setOnboardingTarget,
   } = model;
+  const [onboardingRegion, setOnboardingRegion] = useState("CA");
   const onboardingStage = (organization: (typeof state.organizations)[number]) => organization.status === "active" ? "Activated" : organization.status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
   return (<>
+    {actionBusy === "provision" && (
+      <LoadingOverlay
+        label={onboardingTarget ? "Completing onboarding…" : "Provisioning tenant…"}
+        detail="Setting up the organization and sending the administrator invitation."
+      />
+    )}
 {page === "onboarding" && (
   <>
     <div className="prototype-page-header"><div><h1>Onboarding</h1><p className="muted">New tenants from signup to first booking.</p></div><div className="prototype-header-controls"><label className="prototype-inline-field">Date range<select className="field" value={onboardingRange} onChange={(event) => setOnboardingRange(event.target.value)}><option>Last 7 days</option><option>Last 30 days</option><option>Last 90 days</option></select></label><button type="button" className="btn" onClick={() => document.getElementById("new-tenant-form")?.scrollIntoView({ behavior: "smooth" })}>+ New tenant</button></div></div>
@@ -42,14 +52,21 @@ export function OnboardingPage({ model }: { model: PlatformPageModel }) {
         />
       </Field>
       <Field label="Region">
-        <select className="field" name="region" defaultValue="CA" required>
+        <select className="field" name="region" value={onboardingRegion} onChange={(event) => setOnboardingRegion(event.target.value)} required>
           {(state.type === "ready" ? state.regions.filter((region) => region.enabled) : []).map((region) => (
             <option key={region.code} value={region.code}>{region.code} · {region.name}</option>
           ))}
         </select>
       </Field>
-      <Field label="First location">
-        <input className="field" name="location" required />
+      <Field label="Location name">
+        <input className="field" name="location" placeholder="Downtown clinic" required />
+      </Field>
+      <Field label="Address">
+        <LocationAutocomplete
+          region={onboardingRegion}
+          inputName="location_address"
+          placeholder="Search by street, city or postal code…"
+        />
       </Field>
       <Field label="Administrator name">
         <input className="field" name="admin_name" required />

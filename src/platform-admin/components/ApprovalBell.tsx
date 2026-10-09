@@ -1,5 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
-import { Bell } from 'lucide-react';
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Bell,
+  Building2,
+  CalendarClock,
+  ClipboardList,
+  ReceiptText,
+  ShieldAlert,
+  UserRound,
+} from 'lucide-react';
 import { api } from '../lib/api';
 
 export type ApprovalNotification = {
@@ -14,6 +23,7 @@ export type ApprovalNotification = {
   created_at: string;
   counted?: boolean;
   seen?: boolean;
+  unread?: boolean;
 };
 
 export type ApprovalNotificationFeed = { items: ApprovalNotification[]; unread_count: number };
@@ -51,11 +61,49 @@ function relativeTime(value: string) {
   return `${days}d ago`;
 }
 
-function notificationGlyph(item: ApprovalNotification) {
-  if (item.severity === 'danger') return '!';
-  if (item.kind.includes('payment') || item.kind.includes('billing')) return '$';
-  if (item.kind.includes('appointment') || item.kind.includes('schedule')) return '⌚';
-  return '•';
+function notificationCategory(item: ApprovalNotification) {
+  const text = `${item.kind} ${item.title} ${item.detail}`.toLowerCase();
+  if (item.severity === 'danger' || /failed|error|retry|blocked|alert/.test(text)) return 'alert';
+  if (/billing|invoice|subscription|plan|payment|payout|refund|deposit/.test(text)) return 'billing';
+  if (/due|overdue|installment|appointment|schedule|calendar/.test(text)) return 'due-date';
+  if (/onboard|provision|tenant|organization|invitation|invite/.test(text)) return 'onboarding';
+  if (/audit|auditing|audit-trail|configuration change/.test(text)) return 'audit';
+  if (/patient|clinical|user|staff/.test(text)) return 'people';
+  if (/mfa|password|security|recovery|access/.test(text)) return 'security';
+  return 'general';
+}
+
+function notificationIcon(item: ApprovalNotification): ReactNode {
+  const category = notificationCategory(item);
+  const Icon = {
+    alert: AlertTriangle,
+    billing: ReceiptText,
+    'due-date': CalendarClock,
+    onboarding: Building2,
+    audit: ClipboardList,
+    people: UserRound,
+    security: ShieldAlert,
+    general: Bell,
+  }[category];
+  return <Icon size={17} strokeWidth={2.2} aria-hidden="true" />;
+}
+
+function notificationKey(item: ApprovalNotification) {
+  return `${item.kind}:${item.request_id || item.id || item.created_at}`;
+}
+
+function isUnread(item: ApprovalNotification) {
+  return item.unread === true || item.seen === false || needsAttention(item);
+}
+
+function notificationGroupLabel(value: string) {
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return 'Earlier';
+  const age = Math.max(0, Date.now() - timestamp);
+  if (age < 24 * 60 * 60 * 1000) return 'Today';
+  if (age < 7 * 24 * 60 * 60 * 1000) return 'This week';
+  if (age < 30 * 24 * 60 * 60 * 1000) return 'Last 30 days';
+  return 'Earlier';
 }
 
 export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'platform'; approvalsHref: string }) {
@@ -63,6 +111,15 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
   const [systemPage, setSystemPage] = useState(1);
   const [systemPages, setSystemPages] = useState(1);
   const [open, setOpen] = useState(false);
+  const readStorageKey = `dhmis:notifications:read:${domain}`;
+  const [readIds, setReadIds] = useState<Set<string>>(() => {
+    try {
+      const stored = typeof window === 'undefined' ? null : window.localStorage.getItem(readStorageKey);
+      return new Set(stored ? JSON.parse(stored) : []);
+    } catch {
+      return new Set();
+    }
+  });
   const root = useRef<HTMLDivElement>(null);
   const prefix = domain === 'platform' ? '/platform/rbac' : '/rbac';
 
@@ -78,11 +135,21 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
     }));
     const systemItems = system.items.map((item) => ({ ...item, kind: `system:${item.kind}` }));
     const items = [...approvalItems, ...systemItems];
-    const attentionCount = items.filter(needsAttention).length;
     setSystemPages(Math.max(1, system.pages || 1));
-    setFeed({ items, unread_count: Math.max(approvals.unread_count + system.unread_count, attentionCount) });
+    setFeed({ items, unread_count: approvals.unread_count + system.unread_count });
   }
-  async function openApprovals() {
+  function markRead(item: ApprovalNotification) {
+    const key = notificationKey(item);
+    setReadIds((current) => {
+      if (current.has(key)) return current;
+      const next = new Set(current);
+      next.add(key);
+      try { window.localStorage.setItem(readStorageKey, JSON.stringify([...next])); } catch { /* Storage is optional. */ }
+      return next;
+    });
+  }
+  async function openApprovals(item?: ApprovalNotification) {
+    if (item) markRead(item);
     try { await api(`${prefix}/notifications/seen`, {}); } catch { /* Keep navigation available. */ }
     window.location.assign(approvalsHref);
   }
@@ -105,18 +172,26 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
     return () => { document.removeEventListener('mousedown', dismiss); document.removeEventListener('keydown', dismiss); };
   }, []);
 
-  const attentionCount = feed.items.filter(needsAttention).length;
-  const displayCount = Math.max(feed.unread_count, attentionCount);
+  const visibleItems = useMemo(() => feed.items.filter((item) => !readIds.has(notificationKey(item))), [feed.items, readIds]);
+  const unreadCount = visibleItems.filter(isUnread).length;
+  const groupedItems = useMemo(() => {
+    const groups = new Map<string, ApprovalNotification[]>();
+    visibleItems.slice(0, 8).forEach((item) => {
+      const label = notificationGroupLabel(item.created_at);
+      groups.set(label, [...(groups.get(label) || []), item]);
+    });
+    return [...groups.entries()];
+  }, [visibleItems]);
 
   return <div className="approval-bell" ref={root}>
-    <button type="button" aria-label={`Approvals and notifications${displayCount ? `, ${displayCount} need attention` : ''}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+    <button type="button" aria-label={`Approvals and notifications${unreadCount ? `, ${unreadCount} need attention` : ''}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
       <Bell size={17} aria-hidden="true" />
-      {displayCount > 0 && <span aria-hidden="true">{displayCount > 99 ? '99+' : displayCount}</span>}
+      {unreadCount > 0 && <span aria-hidden="true">{unreadCount > 99 ? '99+' : unreadCount}</span>}
     </button>
     {open && <div className="approval-bell-menu" role="menu">
-      <div className="approval-bell-menu-header"><strong>Notifications</strong><small>{attentionCount ? `${attentionCount} need your attention` : 'Nothing needs your attention'}</small></div>
-      {feed.items.slice(0, 8).map((item) => <button key={`${item.kind}-${item.request_id || item.id}`} type="button" role="menuitem" className={`${item.kind === 'waiting' ? 'is-waiting' : ''} ${item.severity ? `is-${item.severity}` : ''}`} onClick={() => item.request_id ? void openApprovals() : setOpen(false)}><span className="approval-bell-icon" aria-hidden="true">{notificationGlyph(item)}</span><span className="approval-bell-copy"><strong>{item.title}</strong><small>{item.detail}</small><time dateTime={item.created_at}>{relativeTime(item.created_at)}</time><span className="approval-bell-cta">{notificationCta(item)} <span aria-hidden="true">→</span></span></span></button>)}
-      {!feed.items.length && <p>No notifications.</p>}
+      <div className="approval-bell-menu-header"><strong>Notifications</strong><small>{unreadCount ? `${unreadCount} need your attention` : 'All caught up'}</small></div>
+      {groupedItems.map(([label, items]) => <Fragment key={label}><div className="approval-bell-group-label">{label}</div>{items.map((item) => <button key={`${item.kind}-${item.request_id || item.id || item.created_at}`} type="button" role="menuitem" className={`${item.kind === 'waiting' ? 'is-waiting' : ''} ${item.severity ? `is-${item.severity}` : ''}`} onClick={() => item.request_id ? void openApprovals(item) : (markRead(item), setOpen(false))}><span className={`approval-bell-icon is-${notificationCategory(item)}`}>{notificationIcon(item)}</span><span className="approval-bell-copy"><strong>{item.title}</strong><small>{item.detail}</small><time dateTime={item.created_at}>{relativeTime(item.created_at)}</time><span className="approval-bell-cta">{notificationCta(item)} <span aria-hidden="true">→</span></span></span></button>)}</Fragment>)}
+      {!visibleItems.length && <p>No active notifications.</p>}
       <div className="approval-bell-pagination"><button type="button" disabled={systemPage <= 1} onClick={() => setSystemPage((page) => page - 1)}>Previous</button><span>Page {systemPage} of {systemPages}</span><button type="button" disabled={systemPage >= systemPages} onClick={() => setSystemPage((page) => page + 1)}>Next</button></div>
       <button type="button" role="menuitem" className="approval-bell-open" onClick={() => void openApprovals()}>Open approvals</button>
     </div>}

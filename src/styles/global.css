@@ -709,6 +709,7 @@ img.fo-avatar { object-fit:cover; }
 .approval-bell-menu > button.is-warning { border-left:3px solid var(--warning); background:var(--amber-tint); }
 .approval-bell-menu > button.is-danger { border-left:3px solid var(--danger); background:var(--danger-tint); }
 .approval-bell-menu > button.is-info { border-left:3px solid var(--info); background:var(--info-soft); }
+.approval-bell-cta { display:block; margin-top:.45rem; color:var(--sage-deep); font-size:.78rem; font-weight:700; }
 .approval-bell-pagination { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-top:1px solid var(--border); color:var(--ink-muted); font-size:11px; }
 .approval-bell-pagination button { padding:3px 6px; border:1px solid var(--border); border-radius:5px; background:var(--surface); color:var(--ink); }
 .approval-bell-pagination button:disabled { opacity:.5; cursor:not-allowed; }

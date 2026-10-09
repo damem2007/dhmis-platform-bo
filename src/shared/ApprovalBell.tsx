@@ -10,6 +10,7 @@ export type ApprovalNotification = {
   detail: string;
   status: string;
   severity?: 'danger' | 'warning' | 'info';
+  cta_label?: string;
   created_at: string;
   counted?: boolean;
   seen?: boolean;
@@ -17,6 +18,20 @@ export type ApprovalNotification = {
 
 export type ApprovalNotificationFeed = { items: ApprovalNotification[]; unread_count: number };
 type SystemNotificationFeed = { items: ApprovalNotification[]; unread_count: number; page: number; pages: number };
+
+function notificationCta(item: ApprovalNotification) {
+  if (item.cta_label) return item.cta_label;
+  if (item.request_id) {
+    return item.kind === 'action' ? 'Review action' : item.kind === 'waiting' ? 'View request' : 'View outcome';
+  }
+  const kind = item.kind.replace(/^system:/, '').toLowerCase();
+  if (kind.includes('payment') || kind.includes('billing')) return 'Review payment';
+  if (kind.includes('appointment') || kind.includes('schedule')) return 'View appointment';
+  if (kind.includes('patient')) return 'View patient item';
+  if (kind.includes('invitation')) return 'View invitation';
+  if (kind.includes('password') || kind.includes('recovery')) return 'Review recovery';
+  return 'View notification';
+}
 
 export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'platform'; approvalsHref: string }) {
   const [feed, setFeed] = useState<ApprovalNotificationFeed>({ items: [], unread_count: 0 });
@@ -70,7 +85,7 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
     </button>
     {open && <div className="approval-bell-menu" role="menu">
       <div><strong>Notifications</strong><small>{feed.unread_count ? `${feed.unread_count} need your attention` : 'Nothing needs your attention'}</small></div>
-      {feed.items.slice(0, 8).map((item) => <button key={`${item.kind}-${item.request_id || item.id}`} type="button" role="menuitem" className={`${item.kind === 'waiting' ? 'is-waiting' : ''} ${item.severity ? `is-${item.severity}` : ''}`} onClick={() => item.request_id ? void openApprovals() : setOpen(false)}><strong>{item.title}</strong><small>{item.detail}</small></button>)}
+      {feed.items.slice(0, 8).map((item) => <button key={`${item.kind}-${item.request_id || item.id}`} type="button" role="menuitem" className={`${item.kind === 'waiting' ? 'is-waiting' : ''} ${item.severity ? `is-${item.severity}` : ''}`} onClick={() => item.request_id ? void openApprovals() : setOpen(false)}><strong>{item.title}</strong><small>{item.detail}</small><span className="approval-bell-cta">{notificationCta(item)} <span aria-hidden="true">→</span></span></button>)}
       {!feed.items.length && <p>No notifications.</p>}
       <div className="approval-bell-pagination"><button type="button" disabled={systemPage <= 1} onClick={() => setSystemPage((page) => page - 1)}>Previous</button><span>Page {systemPage} of {systemPages}</span><button type="button" disabled={systemPage >= systemPages} onClick={() => setSystemPage((page) => page + 1)}>Next</button></div>
       <button type="button" role="menuitem" className="approval-bell-open" onClick={() => void openApprovals()}>Open approvals</button>

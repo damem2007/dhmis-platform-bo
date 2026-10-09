@@ -193,13 +193,23 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
   const effectiveRoleNames = useMemo(() => {
     if (!effectivePerson) return [];
     const assigned = effectivePerson.assignments?.map((assignment) => assignment.role) || [];
-    return [...new Set(assigned.length ? assigned : (effectivePerson.role ? [effectivePerson.role] : []))];
-  }, [effectivePerson]);
+    const names = assigned.length ? assigned : (effectivePerson.role ? [effectivePerson.role] : []);
+    // Platform users are represented by the control-plane's legacy role key;
+    // the RBAC seed maps that key to the locked Platform Super Admin role.
+    if (domain === 'platform' && effectivePerson.role === 'platform_admin') {
+      const superAdmin = roles.items.find((role) => role.locked);
+      if (superAdmin) names.push(superAdmin.name);
+    }
+    return [...new Set(names)];
+  }, [domain, effectivePerson, roles.items]);
   const effectiveGrants = useMemo(() => {
     const grants = new Map<string, Grant>();
-    roles.items.filter((role) => effectiveRoleNames.includes(role.name)).forEach((role) => role.grants.forEach((grant) => grants.set(grant.permission_key, grant)));
+    roles.items.filter((role) => effectiveRoleNames.includes(role.name)).forEach((role) => {
+      if (role.locked) catalogue.forEach((permission) => grants.set(permission.key, { permission_key: permission.key, effect: 'allow', scope: domain === 'platform' ? 'Platform' : 'Organization', conditions: {} }));
+      else role.grants.forEach((grant) => grants.set(grant.permission_key, grant));
+    });
     return grants;
-  }, [effectiveRoleNames, roles.items]);
+  }, [catalogue, domain, effectiveRoleNames, roles.items]);
   const visibleModules = useMemo(() => modules.map((module) => ({
     ...module,
     resources: module.resources.filter((resource) => {
@@ -374,7 +384,7 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
     {tab === 'compare' && <section className="rbac-tab-content">
       <p className="rbac-tab-intro">Read-only audit view of all {catalogueModules.length || 'the'} {domain} modules, including modules no role has yet. Cells show permissions allowed out of the total. Select a role to edit it.</p>
       <div className="rbac-domain-toggle rbac-domain-toggle-wide" role="group" aria-label="Comparison domain"><button type="button" aria-pressed={domain === 'tenant'} disabled={initialDomain !== 'tenant'} onClick={() => switchDomain('tenant')}>Tenant</button><button type="button" aria-pressed={domain === 'platform'} disabled={initialDomain !== 'platform'} onClick={() => switchDomain('platform')}>Platform</button></div>
-      <section className="panel rbac-compare-panel overflow-auto"><table className="rbac-compare-table"><thead><tr><th>Module</th>{roles.items.map((role) => <th key={role.id}><button type="button" className="rbac-role-link" onClick={() => { setSelectedId(role.id); setTab('roles'); }}>{role.name}</button></th>)}</tr></thead><tbody>{catalogueModules.map((module) => <tr key={module.key}><td>{module.key} · {module.name}</td>{roles.items.map((role) => { const allowed = module.resources.flatMap((resource) => resource.permissions).filter((permission) => role.grants.some((grant) => grant.permission_key === permission.key && grant.effect === 'allow')).length; const total = module.resources.reduce((count, resource) => count + resource.permissions.length, 0); return <td key={role.id}><strong className={allowed ? 'rbac-count-good' : ''}>{allowed}/{total}</strong><span className="rbac-progress"><span style={{ width: `${total ? Math.round((allowed / total) * 100) : 0}%` }} /></span></td>; })}</tr>)}</tbody></table>{!catalogueModules.length && <p className="muted p-4">Loading permission catalogue…</p>}</section>
+      <section className="panel rbac-compare-panel overflow-auto"><table className="rbac-compare-table"><thead><tr><th>Module</th>{roles.items.map((role) => <th key={role.id}><button type="button" className="rbac-role-link" onClick={() => { setSelectedId(role.id); setTab('roles'); }}>{role.name}</button></th>)}</tr></thead><tbody>{catalogueModules.map((module) => <tr key={module.key}><td>{module.key} · {module.name}</td>{roles.items.map((role) => { const allowed = module.resources.flatMap((resource) => resource.permissions).filter((permission) => role.locked || role.grants.some((grant) => grant.permission_key === permission.key && grant.effect === 'allow')).length; const total = module.resources.reduce((count, resource) => count + resource.permissions.length, 0); return <td key={role.id}><strong className={allowed ? 'rbac-count-good' : ''}>{allowed}/{total}</strong><span className="rbac-progress"><span style={{ width: `${total ? Math.round((allowed / total) * 100) : 0}%` }} /></span></td>; })}</tr>)}</tbody></table>{!catalogueModules.length && <p className="muted p-4">Loading permission catalogue…</p>}</section>
     </section>}
     {tab === 'effective' && <section className="rbac-tab-content">
       <h2>Effective access</h2><p className="rbac-tab-intro">People never receive permissions directly. They receive roles, and roles carry the permissions. Pick a person to see their roles and what those roles add up to.</p>

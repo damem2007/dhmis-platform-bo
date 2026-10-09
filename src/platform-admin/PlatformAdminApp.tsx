@@ -91,6 +91,7 @@ type PlatformRegion = {
   currency: string;
 };
 type Challenge = { challenge_token: string; enrollment_required: boolean };
+type PlatformProfile = { id: string; name: string; email: string; role: string; mfa_enabled: boolean };
 type OrganizationPage = { page: number; page_size: number; total: number; items: Organization[] };
 type platformEnrollment= {secret?: string, qr: string}
 type AdminState =
@@ -129,6 +130,8 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const [notice, setNotice] = useState<Notice|null>(null);
   const [selectedId, setSelectedId] = useState("");
   const [tenantSearch, setTenantSearch] = useState("");
+  const [tenantStatusFilter, setTenantStatusFilter] = useState("all");
+  const [tenantPlanFilter, setTenantPlanFilter] = useState("all");
   const [overviewDateRange, setOverviewDateRange] = useState("Last 24 hours");
   const [overviewStatusFilter, setOverviewStatusFilter] = useState("all");
   const [overviewPlanFilter, setOverviewPlanFilter] = useState("all");
@@ -151,10 +154,12 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const [theme, setTheme] = useState<"light" | "dark">(() => window.localStorage.getItem("dhmis.platform.theme") === "dark" ? "dark" : "light");
   //const [user, setUser] = useState<User | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [accountView, setAccountView] = useState<"profile" | "password" | "mfa" | null>(null);
+  const [profile, setProfile] = useState<PlatformProfile | null>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setOverviewTablePage(1);
-  }, [tenantSearch, overviewStatusFilter, overviewPlanFilter, overviewRowsPerPage]);
+  }, [tenantSearch, tenantStatusFilter, tenantPlanFilter, overviewStatusFilter, overviewPlanFilter, overviewRowsPerPage]);
   useEffect(() => {
     setOnboardingPage(1);
   }, [onboardingSearch, onboardingStageFilter]);
@@ -195,7 +200,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
       const [organizationResult, adapterDefaults, integrationRequests, integrationStatus, regions, approvals] =
         await Promise.all([
           page === "tenants"
-            ? api<OrganizationPage>(`/platform/organizations/query?page=${requestedPage}&page_size=25&search=${encodeURIComponent(tenantSearch)}`)
+            ? api<OrganizationPage>(`/platform/organizations/query?page=${requestedPage}&page_size=25&search=${encodeURIComponent(tenantSearch)}${tenantStatusFilter !== "all" ? `&status=${encodeURIComponent(tenantStatusFilter)}` : ""}${tenantPlanFilter !== "all" ? `&plan=${encodeURIComponent(tenantPlanFilter)}` : ""}`)
             : api<Organization[]>("/platform/organizations"),
           api<AdapterDefault[]>("/platform/adapter-defaults"),
           api<IntegrationRequest[]>("/platform/integration-requests"),
@@ -223,6 +228,41 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
           reason instanceof Error ? reason.message : "Platform request failed",
       });
     }
+  }
+
+  async function loadProfile() {
+    try { setProfile(await api<PlatformProfile>("/platform/auth/me")); }
+    catch (reason) { setNotice({ message: reason instanceof Error ? reason.message : "Profile could not be loaded", state: "ready" }); }
+  }
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      setProfile(await api<PlatformProfile>("/platform/auth/me", { name: form.get("name") }, "PUT"));
+      setNotice({ message: "Profile updated.", state: "ready" });
+      setAccountView("profile");
+    } catch (reason) { setNotice({ message: reason instanceof Error ? reason.message : "Profile could not be updated", state: "ready" }); }
+  }
+
+  async function changePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      await api("/platform/auth/password/change", { current_password: form.get("current_password"), new_password: form.get("new_password") });
+      window.sessionStorage.removeItem(platformSessionKey); setToken(""); setAccountView(null); setState({ type: "login" });
+      setNotice({ message: "Password changed. Sign in again with your new password.", state: "login" });
+    } catch (reason) { setNotice({ message: reason instanceof Error ? reason.message : "Password could not be changed", state: "ready" }); }
+  }
+
+  async function resetMfa(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      await api("/platform/auth/mfa/reset", { password: form.get("password") });
+      window.sessionStorage.removeItem(platformSessionKey); setToken(""); setAccountView(null); setState({ type: "login" });
+      setNotice({ message: "MFA reset. Sign in again to enroll a new authenticator.", state: "login" });
+    } catch (reason) { setNotice({ message: reason instanceof Error ? reason.message : "MFA could not be reset", state: "ready" }); }
   }
 
   async function login(event: FormEvent<HTMLFormElement>) {
@@ -772,7 +812,8 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
                   role="menuitem"
                   onClick={() => {
                     setAccountOpen(false);
-                  //  onAccountSection?.("profile");
+                    setAccountView("profile");
+                    void loadProfile();
                   }}
                 >
                   My profile
@@ -781,7 +822,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
                   role="menuitem"
                   onClick={() => {
                     setAccountOpen(false);
-                    //onAccountSection?.("password");
+                    setAccountView("password");
                   }}
                 >
                   Change password
@@ -790,7 +831,8 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
                   role="menuitem"
                   onClick={() => {
                     setAccountOpen(false);
-                    //onAccountSection?.("security");
+                    setAccountView("mfa");
+                    void loadProfile();
                   }}
                 >
                   Security &amp; MFA
@@ -809,6 +851,15 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
           </div>
         </div>
       </header>
+
+      {accountView && <div className="platform-profile-overlay" role="dialog" aria-modal="true" aria-labelledby="platform-profile-title">
+        <section className="platform-profile-panel">
+          <div className="platform-profile-header"><div><h2 id="platform-profile-title">{accountView === "profile" ? "My profile" : accountView === "password" ? "Change password" : "Security & MFA"}</h2><p className="muted">Manage your platform operator account.</p></div><button type="button" className="btn-secondary" onClick={() => setAccountView(null)}>Close</button></div>
+          {accountView === "profile" && <form className="platform-profile-form" onSubmit={saveProfile}><Field label="Name"><input className="field" name="name" required minLength={2} defaultValue={profile?.name || providerName} /></Field><Field label="Email"><input className="field" value={profile?.email || ""} readOnly /></Field><Field label="Role"><input className="field" value={profile?.role || "platform_admin"} readOnly /></Field><button className="btn">Save profile</button></form>}
+          {accountView === "password" && <form className="platform-profile-form" onSubmit={changePassword}><p className="muted">Choose a new password with at least 12 characters. All other sessions will be signed out.</p><Field label="Current password"><input className="field" name="current_password" type="password" autoComplete="current-password" required /></Field><Field label="New password"><input className="field" name="new_password" type="password" autoComplete="new-password" minLength={12} required /></Field><button className="btn">Change password</button></form>}
+          {accountView === "mfa" && <form className="platform-profile-form" onSubmit={resetMfa}><p className="muted">If you lost your authenticator, reset MFA here. You will be signed out and prompted to enroll a new authenticator at the next sign-in.</p><Field label="Current password"><input className="field" name="password" type="password" autoComplete="current-password" required /></Field><p className="muted text-sm">MFA status: {profile?.mfa_enabled ? "Enabled" : "Not enrolled"}</p><button className="btn">Reset MFA and sign out</button></form>}
+        </section>
+      </div>}
 
       
 
@@ -1063,6 +1114,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
           {page === "tenants" && (
             <>
               <section className="panel overflow-auto">
+                <div className="platform-table-filters platform-tenant-filters"><input className="field" type="search" value={tenantSearch} onChange={(event) => { setTenantSearch(event.target.value); setTenantPage(1); }} placeholder="Search organization, slug or region…" aria-label="Search tenants" /><select className="field" value={tenantStatusFilter} onChange={(event) => { setTenantStatusFilter(event.target.value); setTenantPage(1); }} aria-label="Filter tenant status"><option value="all">All statuses</option><option value="active">Active</option><option value="provisioning">Provisioning</option><option value="suspended">Suspended</option><option value="disabled">Disabled</option></select><select className="field" value={tenantPlanFilter} onChange={(event) => { setTenantPlanFilter(event.target.value); setTenantPage(1); }} aria-label="Filter tenant plan"><option value="all">All plans</option>{overviewPlanOptions.map((plan) => <option key={plan} value={plan}>{plan === "unconfigured" ? "Unconfigured" : plan}</option>)}</select><button type="button" className="btn" onClick={() => void load(1)}>Filter</button></div>
                 <table>
                   <thead>
                     <tr>

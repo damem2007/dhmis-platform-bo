@@ -297,6 +297,13 @@ img.fo-avatar { object-fit:cover; }
 .platform-topbar-actions .staff-help > button { min-height:34px; border:1px solid var(--pa-bd); background:var(--pa-sf); }
 .platform-help-button { display:inline-flex; align-items:center; gap:5px; padding:7px 10px; border-radius:6px; color:var(--pa-tx); font-size:14px; font-weight:650; }
 .platform-theme-toggle { display:grid; place-items:center; width:34px; height:34px; border:1px solid var(--pa-bd); border-radius:6px; background:var(--pa-sf); color:var(--pa-mu); }
+.platform-profile-overlay { position:fixed; inset:0; z-index:90; display:grid; place-items:start end; padding:76px 22px 22px; background:rgb(15 27 23 / .24); }
+.platform-profile-panel { width:min(430px, calc(100vw - 32px)); padding:22px; border:1px solid var(--pa-bd); border-radius:14px; background:var(--pa-sf); color:var(--pa-tx); box-shadow:0 20px 60px rgb(15 35 28 / .24); }
+.platform-profile-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding-bottom:16px; border-bottom:1px solid var(--pa-bd); }
+.platform-profile-header h2 { font-size:20px; }
+.platform-profile-header p { margin:4px 0 0; }
+.platform-profile-form { display:grid; gap:14px; padding-top:18px; }
+.platform-profile-form > .btn { justify-self:start; }
 .platform-topbar-actions .staff-help > button[aria-expanded="true"] { background:#eef2f0; }
 .platform-topbar-actions .approval-bell > button { min-width:38px; min-height:34px; border:1px solid #dbe3df; border-radius:6px; background:#fff; }
 .platform-signout { min-height:34px; white-space:nowrap; }

@@ -7,7 +7,7 @@ type Grant = { permission_key: string; effect: 'allow' | 'deny'; scope: string; 
 type Role = { id: string; domain: Domain; name: string; description: string; status: string; parent_id: string | null; locked: boolean; version: number; user_count: number; permission_count: number; grants: Grant[] };
 type Permission = { key: string; domain: Domain; module_id: string; module_name: string; resource_key: string; resource_name: string; action: string; group: string; risk: number; restricted: boolean; reviewed: boolean; retired: boolean; requires: string[]; valid_scopes: string[] };
 type Decision = { permission_key: string; allowed: boolean; reach: string | null; filter_scope: string | null; needs_approval: boolean; needs_step_up: boolean; governing_rule_id: string | null; trace: string[] };
-type ChangeRequest = { id: string; domain?: Domain; kind: string; status: string; maker_id: string; reason: string; patch?: Record<string, unknown>; risk: number; affected_users: number; required_approvals: number; expires_at: string; break_glass: boolean; decisions: { user_id: string; decision: string; comment: string; decided_at: string }[] };
+type ChangeRequest = { id: string; domain?: Domain; kind: string; maker_id: string; role_id?: string | null; created_at?: string; status: string; reason: string; patch?: Record<string, unknown> | unknown[]; runtime_permission_key?: string | null; risk: number; affected_users: number; required_approvals: number; expires_at: string; break_glass: boolean; decisions: { user_id: string; decision: string; comment: string; decided_at: string }[] };
 type History = { id: string; version: number; author_id: string; approver_ids: string[]; reason: string; changes: unknown[]; break_glass: boolean; created_at: string };
 type ApprovalSettings = { require_role_grant_critical_or_four_eyes: boolean; require_high_risk_assignment: boolean; require_sod_conflict: boolean; require_every_change: boolean; require_superadmin_change: boolean; approvers_needed: number; expires_after_hours: number; tenant_eligible_roles: string[]; platform_eligible_roles: string[]; break_glass_enabled: boolean; break_glass_requires_step_up_mfa: boolean; break_glass_review_within_hours: number };
 type FourEyesRule = { id: string; name: string; scope: 'Off' | 'Tenant' | 'Platform' | 'Both'; priority: number; patterns: string[]; matches: number; governed: number; overlaps: number };
@@ -22,17 +22,50 @@ const emptyPage = <T,>(): Page<T> => ({ page: 1, size: 10, total: 0, pages: 0, i
 const tone = (status: string) => status === 'published' || status === 'approved' || status === 'applied' ? 'good' : status === 'pending' ? 'info' : status === 'rejected' || status === 'conflicted' ? 'danger' : 'neutral';
 const baseActions = new Set(['read', 'create', 'update']);
 const actionLabel = (action: string) => action.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-function requestPatchLines(patch: Record<string, unknown> | undefined): string[] {
-  if (!patch) return [];
-  return Object.entries(patch).flatMap(([key, value]) => {
+const requestKindLabel = (kind: string) => ({ 'role-policy': 'Role policy', 'role-publication': 'Role publication', 'approval-policy': 'Approval policy', 'four-eyes-rules': 'Four-eyes rules', 'runtime-action': 'Action approval' }[kind] || actionLabel(kind));
+const relativeTime = (value?: string) => {
+  if (!value) return 'time unavailable';
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+};
+function requestPatchLines(patch: Record<string, unknown> | unknown[] | undefined, catalogue: Permission[], runtimePermissionKey?: string | null): string[] {
+  const entries = Array.isArray(patch) ? patch : patch ? Object.entries(patch).map(([key, value]) => ({ key, value })) : [];
+  if (!entries.length && runtimePermissionKey) {
+    const permission = catalogue.find((item) => item.key === runtimePermissionKey);
+    return [permission ? `${permission.module_name} · ${permission.resource_name} · ${actionLabel(permission.action)} requested` : 'Action requested'];
+  }
+  if (Array.isArray(patch)) {
+    return patch.slice(0, 8).flatMap((value) => {
+      if (!value || typeof value !== 'object') return [];
+      const item = value as Record<string, unknown>;
+      if (item.publish) return ['Publish role'];
+      const key = String(item.permission_key || '');
+      const permission = catalogue.find((candidate) => candidate.key === key);
+      const label = permission ? `${permission.module_name} · ${permission.resource_name} · ${actionLabel(permission.action)}` : key || 'Permission';
+      const grant = item.new_grant && typeof item.new_grant === 'object' ? item.new_grant as Record<string, unknown> : null;
+      if (!grant) return [`${label}: removed`];
+      const effect = String(grant.effect || 'changed');
+      const scope = grant.scope ? ` · ${String(grant.scope)}` : '';
+      return [`${label}: ${effect}${scope}`];
+    });
+  }
+  return Object.entries(patch || {}).flatMap(([key, value]) => {
     if (key === 'grants' && Array.isArray(value)) {
       return value.slice(0, 8).map((grant) => {
         if (!grant || typeof grant !== 'object') return `${key}: ${String(grant)}`;
         const item = grant as Record<string, unknown>;
-        const permission = String(item.permission_key || item.permission || 'permission');
+        const permissionKey = String(item.permission_key || item.permission || '');
+        const permission = catalogue.find((candidate) => candidate.key === permissionKey);
+        const label = permission ? `${permission.module_name} · ${permission.resource_name} · ${actionLabel(permission.action)}` : permissionKey || 'Permission';
         const effect = String(item.new_grant && typeof item.new_grant === 'object' ? (item.new_grant as Record<string, unknown>).effect || 'changed' : item.effect || 'changed');
         const scope = String(item.new_grant && typeof item.new_grant === 'object' ? (item.new_grant as Record<string, unknown>).scope || '' : item.scope || '');
-        return `${permission}: ${effect}${scope ? ` · ${scope}` : ''}`;
+        return `${label}: ${effect}${scope ? ` · ${scope}` : ''}`;
       });
     }
     if (key === 'settings' && value && typeof value === 'object') {
@@ -78,6 +111,7 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
   const [permissions, setPermissions] = useState<Page<Permission>>(emptyPage());
   const [catalogue, setCatalogue] = useState<Permission[]>([]);
   const [effectivePeople, setEffectivePeople] = useState<EffectivePerson[]>([]);
+  const [currentActor, setCurrentActor] = useState<{ id: string; name: string; role: string } | null>(null);
   const [effectivePersonId, setEffectivePersonId] = useState('');
   const [requests, setRequests] = useState<Page<ChangeRequest>>(emptyPage());
   const [requestPage, setRequestPage] = useState(1);
@@ -155,6 +189,11 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
       }
     } catch { setEffectivePeople([]); }
   }
+  async function loadCurrentActor() {
+    if (domain !== 'platform') return;
+    try { setCurrentActor(await api<{ id: string; name: string; role: string }>('/platform/auth/me')); }
+    catch { setCurrentActor(null); }
+  }
   async function loadRequests(page = requestPage, size = requestSize) { const result = await api<Page<ChangeRequest>>(`${prefix}/requests?page=${page}&size=${size}`); setRequests(result); setRequestPage(result.page); setRequestSize(result.size); }
   async function loadHistory() { setHistory(await api<Page<History>>(`${prefix}/history?page=1&size=25`)); }
   async function loadPolicy(page = policyPage, size = policySize) {
@@ -165,7 +204,7 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
   async function refresh() {
     setBusy(true);
     setMessage('');
-    try { await Promise.all([loadRoles(), loadPermissions(), loadCatalogue(), loadEffectivePeople(), loadRequests(), loadHistory(), loadPolicy()]); }
+    try { await Promise.all([loadRoles(), loadPermissions(), loadCatalogue(), loadEffectivePeople(), loadCurrentActor(), loadRequests(), loadHistory(), loadPolicy()]); }
     catch (error) { setMessage(error instanceof Error ? error.message : 'Roles and access could not be loaded'); }
     finally { setBusy(false); }
   }
@@ -417,7 +456,29 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
       <h3>Access by module</h3><section className="panel rbac-effective-table"><table><thead><tr><th>Module</th><th>Allowed</th></tr></thead><tbody>{catalogueModules.map((module) => { const permissionsInModule = module.resources.flatMap((resource) => resource.permissions); const total = permissionsInModule.length; const allowed = effectivePersonId ? permissionsInModule.filter((permission) => effectiveGrants.get(permission.key)?.effect === 'allow').length : 0; return <tr key={module.key}><td>{module.key} · {module.name}</td><td><strong className={allowed ? 'rbac-count-good' : ''}>{effectivePersonId ? `${allowed}/${total}` : `—/${total}`}</strong><span className="rbac-progress"><span style={{ width: `${effectivePersonId && total ? Math.round((allowed / total) * 100) : 0}%` }} /></span></td></tr>; })}</tbody></table>{!catalogueModules.length && <p className="muted p-4">Permission catalogue unavailable.</p>}</section>
       <h3>Check one permission</h3><section className="panel"><form className="rbac-effective-check" onSubmit={checkAccess}><label className="label">Permission key<input className="field" value={checkKey} onChange={(event) => setCheckKey(event.target.value)} required placeholder="billing.payment.refund" /></label><label className="label">User ID (blank means me)<input className="field" value={checkUser || effectivePersonId} onChange={(event) => setCheckUser(event.target.value)} /></label><button className="btn self-end">Check access</button></form>{decision && <div className="rbac-decision"><div className="flex gap-2"><span className={`prototype-badge prototype-badge-${decision.allowed ? 'good' : 'danger'}`}>{decision.allowed ? 'Allowed' : 'Denied'}</span>{decision.reach && <span className="prototype-badge">{decision.reach}{decision.filter_scope ? ` · ${decision.filter_scope}` : ''}</span>}{decision.needs_approval && <span className="prototype-badge prototype-badge-warn">Approval required</span>}</div><ol>{decision.trace.map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ol></div>}</section>
     </section>}
-    {tab === 'approvals' && <section className="rbac-tab-content"><p className="rbac-tab-intro">One person makes a sensitive change or action, another approves it. Requests shown here are loaded from the built-in approval workflow for the selected authorization domain.</p><section className="rbac-approval-list">{requests.items.map((request) => { const riskLabel = ['None', 'Low', 'Medium', 'High', 'Critical'][request.risk] || 'High'; const comment = approvalComments[request.id] || ''; return <article className="panel rbac-approval-card" key={request.id}><div className="rbac-approval-head"><div><h3>{request.kind.replaceAll('-', ' ')} <span className="muted">· {request.id}</span></h3><p className="muted">{request.break_glass ? 'Break-glass action' : 'Role or permission change'} · {domain} · by {request.maker_id} · expires {new Date(request.expires_at).toLocaleString()}</p></div><div className="rbac-approval-badges"><span className={`prototype-badge prototype-badge-${request.status === 'pending' ? 'warn' : tone(request.status)}`}>{request.status === 'pending' ? 'Pending approval' : request.status}</span><span className={`prototype-badge prototype-badge-${request.risk >= 4 ? 'danger' : 'warn'}`}>{riskLabel} risk</span></div></div><p><strong>Reason:</strong> {request.reason || '—'}</p>{request.patch && <ul className="rbac-request-details">{requestPatchLines(request.patch).map((line, index) => <li key={`${request.id}-detail-${index}`}>{line}</li>)}</ul>}<p className="muted">Affects {request.affected_users} user{request.affected_users === 1 ? '' : 's'} · {request.decisions.length} of {request.required_approvals} approval{request.required_approvals === 1 ? '' : 's'}</p>{request.status === 'pending' && <><input className="field rbac-comment" value={comment} onChange={(event) => setApprovalComments((current) => ({ ...current, [request.id]: event.target.value }))} placeholder="Comment (required to reject)" /><div className="rbac-approval-actions"><button className="btn" type="button" disabled={busy} onClick={() => void requestAction(request, 'approve', comment)}>Approve</button><button className="btn-secondary" type="button" disabled={busy || comment.trim().length < 5} onClick={() => void requestAction(request, 'reject', comment)}>Reject</button><button className="btn-secondary" type="button" disabled={busy} onClick={() => void requestAction(request, 'withdraw', comment)}>Withdraw</button></div><p className="rbac-approval-hint">Approval eligibility is enforced by the backend; the maker cannot approve their own request.</p></>}</article>; })}{!requests.items.length && <section className="panel rbac-empty-approval"><div className="rbac-empty-approval-grid"><strong>Request</strong><strong>Maker / reason</strong><strong>Risk</strong><strong>Expires</strong><strong>Status</strong><strong>Actions</strong></div><p className="muted">No approval requests.</p></section>}<div className="prototype-pagination rbac-request-pagination"><label className="label">Rows<select className="field" value={requestSize} onChange={(event) => void loadRequests(1, Number(event.target.value))}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option></select></label><span>Page {requests.page} of {requests.pages || 1} · {requests.total} requests</span><button className="btn-secondary" disabled={requests.page <= 1} onClick={() => void loadRequests(requests.page - 1, requestSize)}>Previous</button><button className="btn-secondary" disabled={requests.page >= requests.pages} onClick={() => void loadRequests(requests.page + 1, requestSize)}>Next</button></div></section></section>}
+    {tab === 'approvals' && <section className="rbac-tab-content"><p className="rbac-tab-intro">One person makes a sensitive change or action, another approves it. Requests shown here are loaded from the built-in approval workflow for the selected authorization domain.</p><section className="rbac-approval-list">{requests.items.map((request) => {
+      const riskLabel = ['None', 'Low', 'Medium', 'High', 'Critical'][request.risk] || 'High';
+      const comment = approvalComments[request.id] || '';
+      const role = request.role_id ? roles.items.find((item) => item.id === request.role_id) : undefined;
+      const patchItems = Array.isArray(request.patch) ? request.patch.filter((item) => item && typeof item === 'object') : [];
+      const changeCount = patchItems.length || (request.runtime_permission_key ? 1 : 0);
+      const title = role ? `${requestKindLabel(request.kind)} · ${role.name}: ${changeCount || 1} change${changeCount === 1 ? '' : 's'}` : `${requestKindLabel(request.kind)} · ${changeCount ? `${changeCount} change${changeCount === 1 ? '' : 's'}` : 'request'}`;
+      const maker = effectivePeople.find((person) => person.id === request.maker_id);
+      const makerLabel = maker ? `${maker.name}${maker.email ? ` · ${maker.email}` : ''}` : 'Requester unavailable';
+      const createdLabel = relativeTime(request.created_at);
+      const expiresLabel = request.expires_at ? new Date(request.expires_at).toLocaleString() : 'expiry unavailable';
+      const isMaker = currentActor?.id === request.maker_id;
+      const canDecide = Boolean(currentActor) && !isMaker;
+      const canWithdraw = Boolean(currentActor) && isMaker;
+      const eligibilityHint = !currentActor ? 'Your identity could not be loaded; approval actions are unavailable.' : isMaker ? 'You can’t approve your own request. You can withdraw it while it is pending.' : 'Approval eligibility is enforced by the backend for this authorization domain.';
+      return <article className="panel rbac-approval-card" key={request.id}>
+        <div className="rbac-approval-head"><div><h3>{title}</h3><p className="muted">{request.break_glass ? 'Break-glass action' : 'Role or permission change'} · {domain} · by {makerLabel} · {createdLabel} · <time dateTime={request.expires_at} title={expiresLabel}>expires {expiresLabel}</time></p></div><div className="rbac-approval-badges"><span className={`prototype-badge prototype-badge-${request.status === 'pending' ? 'warn' : tone(request.status)}`}>{request.status === 'pending' ? 'Pending approval' : request.status}</span><span className={`prototype-badge prototype-badge-${request.risk >= 4 ? 'danger' : 'warn'}`}>{riskLabel} risk</span></div></div>
+        <p><strong>Reason:</strong> {request.reason || '—'}</p>
+        {(request.patch || request.runtime_permission_key) && <ul className="rbac-request-details">{requestPatchLines(request.patch, catalogue, request.runtime_permission_key).map((line, index) => <li key={`${request.id}-detail-${index}`}>{line}</li>)}</ul>}
+        <p className="muted">{request.affected_users >= 0 ? `Affects ${request.affected_users} user${request.affected_users === 1 ? '' : 's'}` : 'Affected users unavailable'} · {request.decisions.length} of {request.required_approvals} approval{request.required_approvals === 1 ? '' : 's'}</p>
+        {request.status === 'pending' && <><input className="field rbac-comment" value={comment} onChange={(event) => setApprovalComments((current) => ({ ...current, [request.id]: event.target.value }))} placeholder="Comment (required to reject)" /><div className="rbac-approval-actions"><button className="btn" type="button" disabled={busy || !canDecide} onClick={() => void requestAction(request, 'approve', comment)}>Approve</button><button className="btn-secondary" type="button" disabled={busy || !canDecide || comment.trim().length < 5} onClick={() => void requestAction(request, 'reject', comment)}>Reject</button><button className="btn-secondary" type="button" disabled={busy || !canWithdraw} onClick={() => void requestAction(request, 'withdraw', comment)}>Withdraw</button></div><p className="rbac-approval-hint">{eligibilityHint}</p></>}
+      </article>;
+    })}{!requests.items.length && <section className="panel rbac-empty-approval"><div className="rbac-empty-approval-grid"><strong>Request</strong><strong>Maker / reason</strong><strong>Risk</strong><strong>Expires</strong><strong>Status</strong><strong>Actions</strong></div><p className="muted">No approval requests.</p></section>}<div className="prototype-pagination rbac-request-pagination"><label className="label">Rows<select className="field" value={requestSize} onChange={(event) => void loadRequests(1, Number(event.target.value))}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option></select></label><span>Page {requests.page} of {requests.pages || 1} · {requests.total} requests</span><button className="btn-secondary" disabled={requests.page <= 1} onClick={() => void loadRequests(requests.page - 1, requestSize)}>Previous</button><button className="btn-secondary" disabled={requests.page >= requests.pages} onClick={() => void loadRequests(requests.page + 1, requestSize)}>Next</button></div></section></section>}
     {tab === 'policy' && policy && policyDraft && <div className="rbac-tab-content rbac-policy-content"><h2>Approval policy</h2><div className="rbac-domain-toggle rbac-domain-toggle-wide" role="group" aria-label="Approval policy domain"><button type="button" aria-pressed={domain === 'tenant'} disabled={initialDomain !== 'tenant'} onClick={() => switchDomain('tenant')}>Tenant</button><button type="button" aria-pressed={domain === 'platform'} disabled={initialDomain !== 'platform'} onClick={() => switchDomain('platform')}>Platform</button></div><p className="rbac-tab-intro">Configure maker-checker for the selected authorization domain. Role-change approval and runtime action approval are separate mechanisms.</p>
       <section className="panel"><div className="prototype-section-head"><div><h2>Role and permission change approvals</h2><p>Policy for the {domain} authorization domain. Saving creates a request for a different eligible checker.</p></div></div><form onSubmit={submitPolicy}><div className="rbac-policy-grid">
         <PolicyToggle label="Critical or four-eyes permissions" checked={policyDraft.require_role_grant_critical_or_four_eyes} onChange={(checked) => setPolicyDraft({ ...policyDraft, require_role_grant_critical_or_four_eyes: checked })} />

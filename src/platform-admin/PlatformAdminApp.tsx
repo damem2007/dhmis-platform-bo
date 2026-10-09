@@ -137,6 +137,8 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const integrationRequestPageSize = 5;
   const [onboardingPage, setOnboardingPage] = useState(1);
   const [onboardingRange, setOnboardingRange] = useState("Last 7 days");
+  const [onboardingSearch, setOnboardingSearch] = useState("");
+  const [onboardingStageFilter, setOnboardingStageFilter] = useState("all");
   const [supportScope, setSupportScope] = useState<"all" | "mine">("all");
   //const [user, setUser] = useState<User | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -144,6 +146,9 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   useEffect(() => {
     setOverviewTablePage(1);
   }, [tenantSearch, overviewStatusFilter, overviewPlanFilter, overviewRowsPerPage]);
+  useEffect(() => {
+    setOnboardingPage(1);
+  }, [onboardingSearch, onboardingStageFilter]);
   useEffect(() => {
     function dismiss(event: MouseEvent | KeyboardEvent) {
       if (event instanceof KeyboardEvent && event.key !== "Escape") return;
@@ -627,9 +632,15 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     currentIntegrationRequestPage * integrationRequestPageSize,
   );
   const onboardingPageSize = 10;
-  const onboardingPages = Math.max(1, Math.ceil(state.organizations.length / onboardingPageSize));
+  const onboardingStage = (organization: Organization) => organization.status === "active" ? "Activated" : organization.status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const onboardingStageOptions = Array.from(new Set(state.organizations.map(onboardingStage))).sort();
+  const filteredOnboardingOrganizations = state.organizations.filter((organization) =>
+    `${organization.name} ${organization.slug} ${organization.region}`.toLowerCase().includes(onboardingSearch.toLowerCase())
+    && (onboardingStageFilter === "all" || onboardingStage(organization) === onboardingStageFilter),
+  );
+  const onboardingPages = Math.max(1, Math.ceil(filteredOnboardingOrganizations.length / onboardingPageSize));
   const currentOnboardingPage = Math.min(onboardingPage, onboardingPages);
-  const onboardingOrganizations = state.organizations.slice((currentOnboardingPage - 1) * onboardingPageSize, currentOnboardingPage * onboardingPageSize);
+  const onboardingOrganizations = filteredOnboardingOrganizations.slice((currentOnboardingPage - 1) * onboardingPageSize, currentOnboardingPage * onboardingPageSize);
   const onboardingFunnel = [
     ["Signed up", "—"],
     ["Organization created", state.organizations.length],
@@ -1173,8 +1184,8 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
               <div className="prototype-page-header"><div><h1>Onboarding</h1><p className="muted">New tenants from signup to first booking.</p></div><div className="prototype-header-controls"><label className="prototype-inline-field">Date range<select className="field" value={onboardingRange} onChange={(event) => setOnboardingRange(event.target.value)}><option>Last 7 days</option><option>Last 30 days</option><option>Last 90 days</option></select></label><button type="button" className="btn" onClick={() => document.getElementById("new-tenant-form")?.scrollIntoView({ behavior: "smooth" })}>+ New tenant</button></div></div>
               <section className="platform-kpis"><article className="prototype-kpi"><span>New signups</span><strong>—</strong><small>Signup telemetry is not available from this API</small></article><article className="prototype-kpi"><span>In setup</span><strong>{state.organizations.filter((o) => o.status !== "active").length}</strong><small>Provisioning or inactive tenants</small></article><article className="prototype-kpi"><span>Activated</span><strong>{activeTenants}</strong><small>Active tenants</small></article><article className="prototype-kpi"><span>Median time to first use</span><strong>—</strong><small>Activation timing is not provided</small></article></section>
               <div className="g2 mb-5"><section className="platform-card"><div className="platform-card-header"><h2>Activation funnel</h2><span className="muted">Live provisioning states</span></div><div className="sc"><table><thead><tr><th>Stage</th><th>Tenants</th><th>Conversion</th></tr></thead><tbody>{onboardingFunnel.map(([stage, count], index) => <tr key={stage}><td>{stage}</td><td>{count}</td><td>{index === 0 || count === "—" ? "—" : "—"}</td></tr>)}</tbody></table></div><p className="p-4 muted text-sm">Booking and patient activation telemetry is not available from the control-plane API.</p></section><section className="platform-card"><div className="platform-card-header"><h2>Needs attention</h2><span className="muted">{attentionTenants}</span></div><div className="platform-card-body">{state.organizations.filter((o) => o.last_error || o.status !== "active").slice(0, 5).map((o) => <div className="ai" key={o.id}><div><strong>{o.name}</strong><p className="muted text-sm">{o.last_error || `Status: ${o.status}`}</p></div><span className="prototype-badge prototype-badge-warn">Open</span><a className="btn-secondary" href="/admin/tenants/">Review</a></div>)}{attentionTenants === 0 && <p className="muted">No onboarding blockers reported.</p>}</div></section></div>
-              <form id="new-tenant-form" className="platform-card frm" onSubmit={provision}>
-                <div className="prototype-section-head" style={{ gridColumn: "1 / -1" }}><div><h2>New tenant</h2><p className="muted text-sm">Provision the organization, first location and organization-scoped administrator.</p></div></div>
+              <form id="new-tenant-form" className="platform-card frm platform-new-tenant-form" onSubmit={provision}>
+                <div className="prototype-section-head platform-new-tenant-header" style={{ gridColumn: "1 / -1" }}><div><h2>New tenant</h2><p className="muted text-sm">Provision the organization, first location and organization-scoped administrator.</p></div></div>
                 <Field label="Organization name">
                   <input className="field" name="name" required />
                 </Field>
@@ -1207,23 +1218,24 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
                     required
                   />
                 </Field>
-                <div className="space-y-1 text-sm">
-                  <label className="block">
+                <fieldset className="platform-checkbox-grid">
+                  <legend>Capabilities</legend>
+                  <label>
                     <input type="checkbox" name="front_office" defaultChecked />{" "}
                     Front Office
                   </label>
-                  <label className="block">
+                  <label>
                     <input type="checkbox" name="booking" defaultChecked />{" "}
                     Booking
                   </label>
-                  <label className="block">
+                  <label>
                     <input type="checkbox" name="portal" defaultChecked />{" "}
                     Patient Portal
                   </label>
-                </div>
-                <button className="btn self-end">Provision tenant</button>
+                </fieldset>
+                <div className="platform-form-actions"><button className="btn">Provision tenant</button></div>
               </form>
-              <section className="platform-card mt-5 overflow-auto"><div className="platform-card-header"><h2>Tenants in onboarding</h2><span className="muted">{state.organizations.length} records</span></div><table><thead><tr><th>Tenant</th><th>Plan</th><th>Stage</th><th>Signed up</th><th>CSM</th><th>Last activity</th><th>Blocker</th><th>Actions</th></tr></thead><tbody>{onboardingOrganizations.map((o) => <tr key={o.id}><td><strong>{o.name}</strong></td><td>{o.commercial?.plan_code || "—"}</td><td>{o.status}</td><td>—</td><td>—</td><td>—</td><td>{o.last_error || "—"}</td><td><a className="btn-secondary" href="/admin/tenants/">Open tenant</a></td></tr>)}</tbody></table>{!state.organizations.length && <p className="p-4 muted">No tenants have entered onboarding.</p>}<div className="prototype-pagination"><span>{state.organizations.length ? `${(currentOnboardingPage - 1) * onboardingPageSize + 1}–${Math.min(currentOnboardingPage * onboardingPageSize, state.organizations.length)} of ${state.organizations.length}` : "0–0 of 0"}</span><button type="button" className="btn-secondary" disabled={currentOnboardingPage <= 1} onClick={() => setOnboardingPage((v) => Math.max(1, v - 1))}>Previous</button><button type="button" className="btn-secondary" disabled={currentOnboardingPage >= onboardingPages} onClick={() => setOnboardingPage((v) => Math.min(onboardingPages, v + 1))}>Next</button></div></section>
+              <section className="platform-card mt-5 overflow-auto"><div className="platform-card-header platform-onboarding-header"><div><h2>Tenants in onboarding</h2><span className="muted">{filteredOnboardingOrganizations.length} matching records</span></div><form className="prototype-filter-bar" onSubmit={(event) => event.preventDefault()}><input className="field" value={onboardingSearch} onChange={(event) => setOnboardingSearch(event.target.value)} placeholder="Search tenants…" aria-label="Search onboarding tenants" /><select className="field" value={onboardingStageFilter} onChange={(event) => setOnboardingStageFilter(event.target.value)} aria-label="Onboarding stage"><option value="all">All stages</option>{onboardingStageOptions.map((stage) => <option key={stage} value={stage}>{stage}</option>)}</select></form></div><table><thead><tr><th>Tenant</th><th>Plan</th><th>Stage</th><th>Signed up</th><th>CSM</th><th>Last activity</th><th>Blocker</th><th>Actions</th></tr></thead><tbody>{onboardingOrganizations.map((o) => <tr key={o.id}><td><strong>{o.name}</strong></td><td>{o.commercial?.plan_code || "—"}</td><td><span className="prototype-badge">{onboardingStage(o)}</span></td><td>—</td><td>—</td><td>—</td><td>{o.last_error || "—"}</td><td><a className="btn-secondary" href="/admin/tenants/">Open tenant</a></td></tr>)}</tbody></table>{!filteredOnboardingOrganizations.length && <p className="p-4 muted">No onboarding tenants match this filter.</p>}<p className="p-4 muted text-sm">Signup dates, CSM ownership, last activity, booking and patient activation telemetry are not available from the control-plane API.</p><div className="prototype-pagination"><span>{filteredOnboardingOrganizations.length ? `${(currentOnboardingPage - 1) * onboardingPageSize + 1}–${Math.min(currentOnboardingPage * onboardingPageSize, filteredOnboardingOrganizations.length)} of ${filteredOnboardingOrganizations.length}` : "0–0 of 0"}</span><button type="button" className="btn-secondary" disabled={currentOnboardingPage <= 1} onClick={() => setOnboardingPage((v) => Math.max(1, v - 1))}>Previous</button><button type="button" className="btn-secondary" disabled={currentOnboardingPage >= onboardingPages} onClick={() => setOnboardingPage((v) => Math.min(onboardingPages, v + 1))}>Next</button></div></section>
             </>
           )}
 

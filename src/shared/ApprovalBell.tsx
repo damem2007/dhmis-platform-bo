@@ -33,6 +33,24 @@ function notificationCta(item: ApprovalNotification) {
   return 'View notification';
 }
 
+function relativeTime(value: string) {
+  const age = Math.max(0, Date.now() - new Date(value).getTime());
+  const minutes = Math.floor(age / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function notificationGlyph(item: ApprovalNotification) {
+  if (item.severity === 'danger') return '!';
+  if (item.kind.includes('payment') || item.kind.includes('billing')) return '$';
+  if (item.kind.includes('appointment') || item.kind.includes('schedule')) return '⌚';
+  return '•';
+}
+
 export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'platform'; approvalsHref: string }) {
   const [feed, setFeed] = useState<ApprovalNotificationFeed>({ items: [], unread_count: 0 });
   const [systemPage, setSystemPage] = useState(1);
@@ -84,8 +102,8 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
       {feed.unread_count > 0 && <span aria-hidden="true">{feed.unread_count > 99 ? '99+' : feed.unread_count}</span>}
     </button>
     {open && <div className="approval-bell-menu" role="menu">
-      <div><strong>Notifications</strong><small>{feed.unread_count ? `${feed.unread_count} need your attention` : 'Nothing needs your attention'}</small></div>
-      {feed.items.slice(0, 8).map((item) => <button key={`${item.kind}-${item.request_id || item.id}`} type="button" role="menuitem" className={`${item.kind === 'waiting' ? 'is-waiting' : ''} ${item.severity ? `is-${item.severity}` : ''}`} onClick={() => item.request_id ? void openApprovals() : setOpen(false)}><strong>{item.title}</strong><small>{item.detail}</small><span className="approval-bell-cta">{notificationCta(item)} <span aria-hidden="true">→</span></span></button>)}
+      <div className="approval-bell-menu-header"><div className="approval-bell-tabs"><strong>Notifications</strong><span>What’s new</span></div><small>{feed.unread_count ? `${feed.unread_count} need your attention` : 'Nothing needs your attention'}</small></div>
+      {feed.items.slice(0, 8).map((item) => <button key={`${item.kind}-${item.request_id || item.id}`} type="button" role="menuitem" className={`${item.kind === 'waiting' ? 'is-waiting' : ''} ${item.severity ? `is-${item.severity}` : ''}`} onClick={() => item.request_id ? void openApprovals() : setOpen(false)}><span className="approval-bell-icon" aria-hidden="true">{notificationGlyph(item)}</span><span className="approval-bell-copy"><strong>{item.title}</strong><small>{item.detail}</small><time dateTime={item.created_at}>{relativeTime(item.created_at)}</time><span className="approval-bell-cta">{notificationCta(item)} <span aria-hidden="true">→</span></span></span></button>)}
       {!feed.items.length && <p>No notifications.</p>}
       <div className="approval-bell-pagination"><button type="button" disabled={systemPage <= 1} onClick={() => setSystemPage((page) => page - 1)}>Previous</button><span>Page {systemPage} of {systemPages}</span><button type="button" disabled={systemPage >= systemPages} onClick={() => setSystemPage((page) => page + 1)}>Next</button></div>
       <button type="button" role="menuitem" className="approval-bell-open" onClick={() => void openApprovals()}>Open approvals</button>

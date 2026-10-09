@@ -6,6 +6,7 @@ import QRCode from "qrcode";
 import { PlatformPageContent } from "./pages/PlatformPageContent";
 import { ApprovalBell, type ApprovalNotificationFeed } from "./components/ApprovalBell";
 import { BrandLoader } from "./components/BrandLoader";
+import { Toast } from "./components/Toast";
 import {
   Home,
   Calendar,
@@ -112,6 +113,11 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     };
   }, []);
   useEffect(() => { accountRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus(); }, [accountOpen]);
+  useEffect(() => {
+    if (state.type !== "ready" || notice?.state !== "ready") return;
+    const timer = window.setTimeout(() => setNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [state.type, notice?.state, notice?.message]);
   /**
    * Dummy Admin User
    */
@@ -681,6 +687,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
 
   return (
     <div className={`platform-admin app${sidebarCollapsed ? " platform-sidebar-collapsed" : ""}`}>
+      {state.type === "ready" && notice?.state === "ready" && <Toast message={notice.message} onDismiss={() => setNotice(null)} />}
       {isSandboxEnvironment && (
         <div className="platform-sandbox sand">
           <span><strong>Development sandbox</strong> · Synthetic records · no live payments, claims, or signatures</span>
@@ -867,12 +874,6 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
               <Title title={meta.title} description={meta.description} />
             </div>
           )}
-          {notice?.state === "ready" && (
-            <p className="panel mb-5 break-all" role="status">
-              {notice.message}
-            </p>
-          )}
-
           <PlatformPageContent model={pageModel} />
         </main>
       </div>

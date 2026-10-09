@@ -101,57 +101,40 @@ export function TenantsPage({ model }: { model: PlatformPageModel }) {
       </div>
     </section>
     {selected && (
-      <form
-        key={`routing-${selected.id}`}
-        className="panel mt-5 space-y-3"
-        onSubmit={configureRouting}
+      <div
+        className="rbac-modal-backdrop"
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setSelectedId("");
+        }}
       >
-        <h2 className="font-semibold">Routing · {selected.name}</h2>
-        <Field label="Slug">
-          <input
-            className="field"
-            name="slug"
-            defaultValue={selected.slug}
-            required
-          />
-        </Field>
-        <Field label="Custom domains (hostname|surface, one per line)">
-          <textarea
-            className="field"
-            name="domains"
-            defaultValue={selected.domains
-              .map((domain) => `${domain.hostname}|${domain.surface}`)
-              .join("\n")}
-          />
-        </Field>
-        <div className="flex flex-wrap gap-4 text-sm">
-          <label>
-            <input
-              type="checkbox"
-              name="front_office"
-              defaultChecked={selected.front_office_enabled}
-            />{" "}
-            Front Office
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="booking"
-              defaultChecked={selected.booking_enabled}
-            />{" "}
-            Booking
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="portal"
-              defaultChecked={selected.patient_portal_enabled}
-            />{" "}
-            Patient Portal
-          </label>
+        <div className="rbac-modal tenant-manage-modal" role="dialog" aria-modal="true" aria-labelledby="tenant-manage-title">
+          <div className="platform-card-header">
+            <div>
+              <h2 id="tenant-manage-title">Manage · {selected.name}</h2>
+              <p className="muted">Update routing, custom domains and enabled surfaces.</p>
+            </div>
+            <button type="button" className="btn-secondary" onClick={() => setSelectedId("")}>Close</button>
+          </div>
+          <form key={`routing-${selected.id}`} className="space-y-3" onSubmit={configureRouting}>
+            <Field label="Slug">
+              <input className="field" name="slug" defaultValue={selected.slug} required />
+            </Field>
+            <Field label="Custom domains (hostname|surface, one per line)">
+              <textarea className="field" name="domains" defaultValue={selected.domains.map((domain) => `${domain.hostname}|${domain.surface}`).join("\n")} />
+            </Field>
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label><input type="checkbox" name="front_office" defaultChecked={selected.front_office_enabled} /> Front Office</label>
+              <label><input type="checkbox" name="booking" defaultChecked={selected.booking_enabled} /> Booking</label>
+              <label><input type="checkbox" name="portal" defaultChecked={selected.patient_portal_enabled} /> Patient Portal</label>
+            </div>
+            <div className="rbac-modal-actions">
+              <button type="button" className="btn-secondary" onClick={() => setSelectedId("")}>Cancel</button>
+              <button className="btn">Save routing</button>
+            </div>
+          </form>
         </div>
-        <button className="btn">Save routing</button>
-      </form>
+      </div>
     )}
   </>
 )}

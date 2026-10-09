@@ -533,6 +533,8 @@ img.fo-avatar { object-fit:cover; }
 .rbac-modal h2 { margin:0; font-size:20px; }
 .rbac-modal .label { display:block; margin-top:12px; }
 .rbac-modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+.tenant-manage-modal { width:min(720px,100%); }
+.tenant-manage-modal .platform-card-header { align-items:flex-start; margin-bottom:18px; }
 .rbac-add-role { display:grid; grid-template-columns:minmax(180px, .65fr) minmax(240px, 1fr) minmax(160px, .6fr) auto; gap:8px; margin-bottom:16px; }
 .rbac-role-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
 .rbac-draft-details { display:grid; grid-template-columns:minmax(170px,.7fr) minmax(240px,1fr) auto; gap:8px; margin-bottom:12px; padding:12px; border:1px solid #dbe3df; border-radius:9px; background:#f8faf9; }

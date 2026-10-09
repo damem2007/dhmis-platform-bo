@@ -254,12 +254,12 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
   const effectiveRoleNames = useMemo(() => {
     if (!effectivePerson) return [];
     const assigned = effectivePerson.assignments?.map((assignment) => assignment.role) || [];
-    const names = assigned.length ? assigned : (effectivePerson.role ? [effectivePerson.role] : []);
-    // Platform users are represented by the control-plane's legacy role key;
-    // the RBAC seed maps that key to the locked Platform Super Admin role.
-    if (domain === 'platform' && effectivePerson.role === 'platform_admin') {
+    const names = domain === 'platform' && assigned.length ? assigned : (effectivePerson.role ? [effectivePerson.role] : []);
+    // Existing platform accounts carry the legacy platform_admin marker. It is
+    // a compatibility value, not a second role; display the locked RBAC role.
+    if (domain === 'platform' && !assigned.length && effectivePerson.role === 'platform_admin') {
       const superAdmin = roles.items.find((role) => role.locked);
-      if (superAdmin) names.push(superAdmin.name);
+      return superAdmin ? [superAdmin.name] : [];
     }
     return [...new Set(names)];
   }, [domain, effectivePerson, roles.items]);
@@ -430,7 +430,7 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
               const permissionCount = module.resources.reduce((total, resource) => total + resource.permissions.length, 0);
               const allowedCount = module.resources.reduce((total, resource) => total + resource.permissions.filter((permission) => draftGrants[permission.key]?.effect === 'allow').length, 0);
               return <details className="rbac-module" key={module.key}>
-                <summary className="rbac-module-header"><strong>{module.key} · {module.name}</strong><span>{allowedCount} of {permissionCount} allowed <span className="rbac-module-actions"><button type="button" className="btn-secondary rbac-small-button" disabled={selected.locked} onClick={(event) => { event.preventDefault(); setModuleLevel(module, 'r'); }}>Read</button><button type="button" className="btn-secondary rbac-small-button" disabled={selected.locked} onClick={(event) => { event.preventDefault(); setModuleLevel(module, 'w'); }}>Read &amp; write</button><button type="button" className="btn-secondary rbac-small-button" disabled={selected.locked} onClick={(event) => { event.preventDefault(); setModuleLevel(module, 'n'); }}>Clear</button></span></span></summary>
+                <summary className="rbac-module-header"><span className="rbac-module-caret" aria-hidden="true">▸</span><strong>{module.key} · {module.name}</strong><span>{allowedCount} of {permissionCount} allowed <span className="rbac-module-actions"><button type="button" className="btn-secondary rbac-small-button" disabled={selected.locked} onClick={(event) => { event.preventDefault(); setModuleLevel(module, 'r'); }}>Read</button><button type="button" className="btn-secondary rbac-small-button" disabled={selected.locked} onClick={(event) => { event.preventDefault(); setModuleLevel(module, 'w'); }}>Read &amp; write</button><button type="button" className="btn-secondary rbac-small-button" disabled={selected.locked} onClick={(event) => { event.preventDefault(); setModuleLevel(module, 'n'); }}>Clear</button></span></span></summary>
                 <div className="rbac-module-body">{module.resources.map((resource) => { const level = resourceLevel(resource, draftGrants); return <div className="rbac-resource-row" key={resource.key}><div><strong>{resource.name}</strong><code>{resource.key}</code></div><div className="rbac-resource-controls"><span className="rbac-level-control" role="group" aria-label={`${resource.name} access`}><button type="button" aria-pressed={level === 'n'} disabled={selected.locked} onClick={() => setResourceLevel(resource, 'n')}>No access</button><button type="button" aria-pressed={level === 'r'} disabled={selected.locked} onClick={() => setResourceLevel(resource, 'r')}>Read only</button><button type="button" aria-pressed={level === 'w'} disabled={selected.locked} onClick={() => setResourceLevel(resource, 'w')}>Read &amp; write</button></span></div><div className="rbac-action-chips">{resource.permissions.filter((permission) => !baseActions.has(permission.action)).map((permission) => { const grant = draftGrants[permission.key]; const isAllowed = grant?.effect === 'allow'; const isDenied = grant?.effect === 'deny'; const requiresRead = level === 'n'; return <button type="button" key={permission.key} className={`rbac-action-chip ${isAllowed ? 'allowed' : ''} ${isDenied ? 'denied' : ''} ${permission.risk >= 3 ? 'high-risk' : ''}`} disabled={selected.locked || requiresRead} title={permission.key} aria-label={`${actionLabel(permission.action)}: ${isDenied ? 'denied' : isAllowed ? 'allowed' : 'off'}${requiresRead ? ', requires read' : ''}`} onClick={() => cycleAction(permission, resource)}>{isAllowed ? '✓ ' : isDenied ? '✕ ' : ''}{actionLabel(permission.action)}{permission.requires.length ? ' 🛡' : ''}{permission.restricted ? ' 🔒' : ''}</button>; })}</div></div>; })}</div>
               </details>;
             })}</div>

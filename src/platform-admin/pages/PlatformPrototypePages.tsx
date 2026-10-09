@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { api } from "../shared/api";
-import { RolesAccess } from "../shared/RolesAccess";
-import type { PlatformPage } from "./PlatformAdminApp";
+import { api } from "../lib/api";
+import { RolesAccess } from "../components/RolesAccess";
+import type { PlatformPage } from "../pageRegistry";
 
 type PrototypePage = Exclude<PlatformPage, "overview" | "tenants" | "onboarding" | "support" | "settings-integrations">;
 type Page<T> = { page: number; page_size: number; total: number; items: T[] };

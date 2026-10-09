@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef, type FormEvent } from "react";
-import { api, setToken } from "../shared/api";
-import { Field, Title } from "../shared/Fields";
-import { isSandboxEnvironment } from "../shared/environment";
+import { api, setToken } from "./lib/api";
+import { Field, Title } from "./components/Fields";
+import { isSandboxEnvironment } from "./lib/environment";
 import QRCode from "qrcode";
-import { PlatformPrototypePage } from "./PlatformPrototypePages";
-import { ApprovalBell, type ApprovalNotificationFeed } from "../shared/ApprovalBell";
-import { BrandLoader } from "../shared/BrandLoader";
+import { PlatformPageContent } from "./pages/PlatformPageContent";
+import { ApprovalBell, type ApprovalNotificationFeed } from "./components/ApprovalBell";
+import { BrandLoader } from "./components/BrandLoader";
 import {
   Home,
   Calendar,
@@ -30,7 +30,7 @@ import {
   Clock,
   type LucideIcon,
 } from "lucide-react";
-import {nameInitials} from "../shared/LogoMark";
+import {nameInitials} from "./components/LogoMark";
 import {
   PLATFORM_PAGE_META,
   PLATFORM_PAGE_TITLES,
@@ -38,82 +38,7 @@ import {
   PLATFORM_SETTINGS_NAV,
   type PlatformPage,
 } from './pageRegistry';
-
-type Organization = {
-  id: string;
-  name: string;
-  slug: string;
-  region: string;
-  status: string;
-  database_alias: string;
-  front_office_enabled: boolean;
-  booking_enabled: boolean;
-  patient_portal_enabled: boolean;
-  last_error: string;
-  domains: { hostname: string; surface: string }[];
-  commercial: {
-    account_status: string;
-    plan_code: string;
-    subscription_status: string;
-  } | null;
-};
-type AdapterDefault = {
-  id: string;
-  region: string;
-  capability: string;
-  provider_name: string;
-  active: boolean;
-};
-type IntegrationRequest = {
-  id: string;
-  organization_id: string;
-  capability: string;
-  provider_name: string;
-  reason: string;
-  status: string;
-  requested_by: string;
-  created_at: string;
-};
-type IntegrationStatus = {
-  capability: string;
-  registered_providers: string[];
-  configured: boolean;
-  provider_name: string;
-  ready: boolean;
-  sandbox_only: boolean;
-  state: string;
-};
-type PlatformRegion = {
-  code: string;
-  name: string;
-  enabled: boolean;
-  locale: string;
-  currency: string;
-};
-type Challenge = { challenge_token: string; enrollment_required: boolean };
-type PlatformProfile = { id: string; name: string; email: string; role: string; mfa_enabled: boolean };
-type OrganizationPage = { page: number; page_size: number; total: number; items: Organization[] };
-type platformEnrollment= {secret?: string, qr: string}
-type AdminState =
-  | { type: "login" }
-  | { type: "bootstrap" }
-  | { type: "invite"; token: string }
-  | { type: "reset"; token: string }
-  | { type: "mfa"; challenge: Challenge; platformEnrollment?: platformEnrollment }
-  | {
-      type: "ready";
-      organizations: Organization[];
-      adapterDefaults: AdapterDefault[];
-      integrationRequests: IntegrationRequest[];
-      integrationStatus: IntegrationStatus[];
-      regions: PlatformRegion[];
-    }
-  | { type: "loading" }
-  | { type: "error"; message: string };
-type Notice ={
-  message: string;
-  state: AdminState["type"];
-}
+import type { AdapterDefault, AdminState, AccountView, Challenge, IntegrationRequest, IntegrationStatus, Notice, Organization, OrganizationPage, PlatformEnrollment, PlatformProfile, PlatformRegion, PlatformPageModel } from "./types";
 export type { PlatformPage } from './pageRegistry';
 
 const platformSessionKey = "dhmis.platform.access-token";
@@ -154,7 +79,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const [theme, setTheme] = useState<"light" | "dark">(() => window.localStorage.getItem("dhmis.platform.theme") === "dark" ? "dark" : "light");
   //const [user, setUser] = useState<User | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [accountView, setAccountView] = useState<"profile" | "password" | "mfa" | null>(null);
+  const [accountView, setAccountView] = useState<AccountView>(null);
   const [profile, setProfile] = useState<PlatformProfile | null>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -697,7 +622,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const onboardingPages = Math.max(1, Math.ceil(filteredOnboardingOrganizations.length / onboardingPageSize));
   const currentOnboardingPage = Math.min(onboardingPage, onboardingPages);
   const onboardingOrganizations = filteredOnboardingOrganizations.slice((currentOnboardingPage - 1) * onboardingPageSize, currentOnboardingPage * onboardingPageSize);
-  const onboardingFunnel = [
+  const onboardingFunnel: [string, string | number][] = [
     ["Signed up", "—"],
     ["Organization created", state.organizations.length],
     ["Location added", "—"],
@@ -737,6 +662,22 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     "settings-audit",
     "settings-roles",
   ].includes(page);
+  const pageModel: PlatformPageModel = {
+    page, meta, state, load, selected, selectedId, setSelectedId, configureRouting,
+    recoverAdministrator, provision, tenantSearch, setTenantSearch, tenantStatusFilter,
+    setTenantStatusFilter, tenantPlanFilter, setTenantPlanFilter, filteredOrganizations,
+    tenantTotal, tenantPage, setTenantPage, overviewDateRange, setOverviewDateRange, overviewStatusFilter,
+    setOverviewStatusFilter, overviewPlanFilter, setOverviewPlanFilter, overviewRowsPerPage,
+    setOverviewRowsPerPage, overviewTablePage, setOverviewTablePage, overviewStatusOptions,
+    overviewPlanOptions, overviewOrganizations, overviewPageOrganizations, overviewPage,
+    overviewPageCount, activeTenants, attentionTenants, platformActions, onboardingRange,
+    setOnboardingRange, onboardingFunnel, onboardingSearch, setOnboardingSearch,
+    onboardingStageFilter, setOnboardingStageFilter, onboardingStageOptions,
+    filteredOnboardingOrganizations, onboardingOrganizations, onboardingPageSize, onboardingPages,
+    currentOnboardingPage, setOnboardingPage, supportScope, setSupportScope, integrationApprovals,
+    currentIntegrationRequestPage, integrationRequestPages, integrationRequestPageSize,
+    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration,
+  };
 
   return (
     <div className={`platform-admin app${sidebarCollapsed ? " platform-sidebar-collapsed" : ""}`}>
@@ -932,569 +873,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
             </p>
           )}
 
-          {page === "overview" && (
-            <>
-              <div className="prototype-page-header">
-                <div>
-                  <h1>{meta.title}</h1>
-                  <p className="muted">{meta.description}</p>
-                </div>
-                <div className="prototype-header-controls">
-                  <label className="platform-date-range">
-                    <span>Date range</span>
-                    <select
-                      className="field"
-                      value={overviewDateRange}
-                      onChange={(event) => setOverviewDateRange(event.target.value)}
-                      aria-label="Date range"
-                    >
-                      <option>Last 24 hours</option>
-                      <option>Last 7 days</option>
-                      <option>Last 30 days</option>
-                    </select>
-                  </label>
-                  <a className="btn" href="/admin/onboarding/">
-                    + New tenant
-                  </a>
-                </div>
-              </div>
-              <p className="platform-overview-note">
-                Platform views show tenant and system health only. Patient clinical and financial records are never displayed here.
-              </p>
-              <section className="platform-kpis" aria-label="Platform status">
-                <article>
-                  <span>Active tenants</span>
-                  <strong>{activeTenants}</strong>
-                  <small>{state.organizations.length} provisioned in the control plane</small>
-                </article>
-                <article>
-                  <span>Monthly recurring revenue</span>
-                  <strong>—</strong>
-                  <small>Revenue telemetry is not provided by this API</small>
-                </article>
-                <article>
-                  <span>Uptime, 30 days</span>
-                  <strong>—</strong>
-                  <small>Availability telemetry is not provided by this API</small>
-                </article>
-                <article>
-                  <span>Failed jobs, 24h</span>
-                  <strong>—</strong>
-                  <small>Queue metrics are available from Jobs &amp; queues</small>
-                </article>
-              </section>
-              <div className="platform-overview-grid">
-                <section className="platform-card" aria-labelledby="platform-action-centre">
-                  <div className="platform-card-header">
-                    <h2 id="platform-action-centre">Action centre</h2>
-                    <span className="muted">{platformActions.length} open</span>
-                  </div>
-                  {platformActions.length === 0 ? (
-                    <p className="muted platform-card-empty">No platform actions require attention.</p>
-                  ) : (
-                    <div>
-                      {platformActions.map((action) => (
-                        <article key={action.title} className="platform-action-item">
-                          <div>
-                            <strong>{action.title}</strong>
-                            <p className="muted">{action.detail}</p>
-                          </div>
-                          <span className={`prototype-badge ${action.severity === "Incident" ? "prototype-badge-danger" : action.severity === "Approval" ? "prototype-badge-info" : "prototype-badge-warn"}`}>
-                            {action.severity}
-                          </span>
-                          <span className="prototype-badge prototype-badge-info">Open</span>
-                          <a className="btn" href={action.href}>Review</a>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </section>
-
-                <section className="platform-card" aria-labelledby="platform-restricted-actions">
-                  <div className="platform-card-header">
-                    <h2 id="platform-restricted-actions">Restricted actions</h2>
-                    <span className="prototype-badge">Audited</span>
-                  </div>
-                  <div className="platform-card-body">
-                    <p className="muted platform-restricted-copy">
-                      Cross-tenant administrator recovery is a fail-safe for locked-out owners. Support-initiated resets stay inside the support user&apos;s own tenant.
-                    </p>
-                    <form className="platform-restricted-form" onSubmit={recoverAdministrator}>
-                      <div className="platform-restricted-fields">
-                        <Field label="Tenant">
-                          <select
-                            className="field"
-                            value={selectedId}
-                            onChange={(event) => setSelectedId(event.target.value)}
-                            required
-                          >
-                            <option value="">Select tenant…</option>
-                            {state.organizations.map((organization) => (
-                              <option key={organization.id} value={organization.id}>{organization.name}</option>
-                            ))}
-                          </select>
-                        </Field>
-                        <Field label="User email">
-                          <input className="field" name="email" type="email" placeholder="owner@clinic.example" required />
-                        </Field>
-                      </div>
-                      <Field label="Reason (required)">
-                        <input className="field" name="reason" minLength={10} placeholder="Owner locked out, verified by phone" required />
-                      </Field>
-                      <input type="hidden" name="action" value="password_reset" />
-                      <button className="btn" disabled={!selectedId}>Send one-time reset link</button>
-                    </form>
-                  </div>
-                </section>
-              </div>
-
-              <section className="platform-card platform-tenants-card" aria-labelledby="platform-tenants">
-                <div className="platform-card-header platform-tenants-header">
-                  <h2 id="platform-tenants">Tenants</h2>
-                  <div className="platform-table-filters">
-                    <input
-                      className="field"
-                      type="search"
-                      value={tenantSearch}
-                      onChange={(event) => setTenantSearch(event.target.value)}
-                      placeholder="Search tenants…"
-                      aria-label="Search tenants in overview"
-                    />
-                    <select className="field" value={overviewStatusFilter} onChange={(event) => setOverviewStatusFilter(event.target.value)} aria-label="Filter tenant status">
-                      <option value="all">All statuses</option>
-                      {overviewStatusOptions.map((status) => <option key={status} value={status}>{status.replace(/(^|[-_])\w/g, (match) => match.replace(/[-_]/, "").toUpperCase())}</option>)}
-                    </select>
-                    <select className="field" value={overviewPlanFilter} onChange={(event) => setOverviewPlanFilter(event.target.value)} aria-label="Filter tenant plan">
-                      <option value="all">All plans</option>
-                      {overviewPlanOptions.map((plan) => <option key={plan} value={plan}>{plan === "unconfigured" ? "Unconfigured" : plan}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="overflow-auto">
-                  <table className="platform-overview-table">
-                    <thead>
-                      <tr><th>Tenant</th><th>Plan</th><th>Locations</th><th>Staff seats</th><th>Status</th><th>Health</th><th>Last active</th><th>Actions</th></tr>
-                    </thead>
-                    <tbody>
-                      {overviewPageOrganizations.map((organization) => {
-                        const statusTone = organization.status === "active" ? "good" : organization.status === "suspended" ? "danger" : "warn";
-                        const healthTone = organization.last_error ? "warn" : "good";
-                        return (
-                          <tr key={organization.id}>
-                            <td><strong className="platform-tenant-name">{organization.name}</strong><small className="muted">/{organization.slug}</small></td>
-                            <td>{organization.commercial?.plan_code || "Unconfigured"}</td>
-                            <td>—</td>
-                            <td>—</td>
-                            <td><span className={`prototype-badge prototype-badge-${statusTone}`}>{organization.status}</span></td>
-                            <td><span className={`prototype-badge prototype-badge-${healthTone}`}>{organization.last_error ? "Degraded" : "Healthy"}</span></td>
-                            <td>—</td>
-                            <td><button className="btn-secondary" onClick={() => setSelectedId(organization.id)}>Open tenant</button></td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {overviewOrganizations.length === 0 && <p className="muted platform-card-empty">No tenants match the current filters.</p>}
-                  {overviewOrganizations.length > 0 && (
-                    <div className="platform-table-footer">
-                      <span>Showing <strong>{(overviewPage - 1) * overviewRowsPerPage + 1}–{Math.min(overviewPage * overviewRowsPerPage, overviewOrganizations.length)}</strong> of <strong>{overviewOrganizations.length}</strong> loaded tenants</span>
-                      <span className="platform-table-pagination">
-                        <label>Rows per page <select className="field" value={overviewRowsPerPage} onChange={(event) => setOverviewRowsPerPage(Number(event.target.value))} aria-label="Rows per page"><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option></select></label>
-                        <button type="button" className="btn-secondary" disabled={overviewPage <= 1} onClick={() => setOverviewTablePage((current) => Math.max(1, current - 1))}>Prev</button>
-                        <span>Page {overviewPage} of {overviewPageCount}</span>
-                        <button type="button" className="btn-secondary" disabled={overviewPage >= overviewPageCount} onClick={() => setOverviewTablePage((current) => Math.min(overviewPageCount, current + 1))}>Next</button>
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </section>
-            </>
-          )}
-
-          {page === "tenants" && (
-            <>
-              <section className="panel overflow-auto">
-                <div className="platform-table-filters platform-tenant-filters"><input className="field" type="search" value={tenantSearch} onChange={(event) => { setTenantSearch(event.target.value); setTenantPage(1); }} placeholder="Search organization, slug or region…" aria-label="Search tenants" /><select className="field" value={tenantStatusFilter} onChange={(event) => { setTenantStatusFilter(event.target.value); setTenantPage(1); }} aria-label="Filter tenant status"><option value="all">All statuses</option><option value="active">Active</option><option value="provisioning">Provisioning</option><option value="suspended">Suspended</option><option value="disabled">Disabled</option></select><select className="field" value={tenantPlanFilter} onChange={(event) => { setTenantPlanFilter(event.target.value); setTenantPage(1); }} aria-label="Filter tenant plan"><option value="all">All plans</option>{overviewPlanOptions.map((plan) => <option key={plan} value={plan}>{plan === "unconfigured" ? "Unconfigured" : plan}</option>)}</select><button type="button" className="btn" onClick={() => void load(1)}>Filter</button></div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Organization</th>
-                      <th>Region</th>
-                      <th>Status</th>
-                      <th>Plan</th>
-                      <th>Surfaces</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredOrganizations.map((organization) => (
-                      <tr key={organization.id}>
-                        <td>
-                          <strong>{organization.name}</strong>
-                          <p className="muted text-xs">
-                            /{organization.slug} · {organization.id}
-                          </p>
-                        </td>
-                        <td>{organization.region}</td>
-                        <td>
-                          {organization.status}
-                          {organization.last_error && (
-                            <p className="text-xs text-[var(--danger)]">
-                              {organization.last_error}
-                            </p>
-                          )}
-                        </td>
-                        <td>
-                          {organization.commercial?.plan_code || "Unconfigured"}
-                          <p className="muted text-xs">
-                            {organization.commercial?.subscription_status}
-                          </p>
-                        </td>
-                        <td>
-                          {[
-                            organization.front_office_enabled && "Front",
-                            organization.booking_enabled && "Booking",
-                            organization.patient_portal_enabled && "Portal",
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </td>
-                        <td>
-                          <button
-                            className="btn-secondary"
-                            onClick={() => setSelectedId(organization.id)}
-                          >
-                            Manage
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="prototype-pagination">
-                  <span>
-                    {tenantTotal ? (tenantPage - 1) * 25 + 1 : 0}–
-                    {Math.min(tenantTotal, tenantPage * 25)} of {tenantTotal}
-                  </span>
-                  <button
-                    className="btn-secondary"
-                    disabled={tenantPage === 1}
-                    onClick={() => void load(tenantPage - 1)}
-                  >
-                    Previous
-                  </button>
-                  <button
-                    className="btn-secondary"
-                    disabled={tenantPage * 25 >= tenantTotal}
-                    onClick={() => void load(tenantPage + 1)}
-                  >
-                    Next
-                  </button>
-                </div>
-              </section>
-              {selected && (
-                <form
-                  key={`routing-${selected.id}`}
-                  className="panel mt-5 space-y-3"
-                  onSubmit={configureRouting}
-                >
-                  <h2 className="font-semibold">Routing · {selected.name}</h2>
-                  <Field label="Slug">
-                    <input
-                      className="field"
-                      name="slug"
-                      defaultValue={selected.slug}
-                      required
-                    />
-                  </Field>
-                  <Field label="Custom domains (hostname|surface, one per line)">
-                    <textarea
-                      className="field"
-                      name="domains"
-                      defaultValue={selected.domains
-                        .map((domain) => `${domain.hostname}|${domain.surface}`)
-                        .join("\n")}
-                    />
-                  </Field>
-                  <div className="flex flex-wrap gap-4 text-sm">
-                    <label>
-                      <input
-                        type="checkbox"
-                        name="front_office"
-                        defaultChecked={selected.front_office_enabled}
-                      />{" "}
-                      Front Office
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        name="booking"
-                        defaultChecked={selected.booking_enabled}
-                      />{" "}
-                      Booking
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        name="portal"
-                        defaultChecked={selected.patient_portal_enabled}
-                      />{" "}
-                      Patient Portal
-                    </label>
-                  </div>
-                  <button className="btn">Save routing</button>
-                </form>
-              )}
-            </>
-          )}
-
-          {page === "onboarding" && (
-            <>
-              <div className="prototype-page-header"><div><h1>Onboarding</h1><p className="muted">New tenants from signup to first booking.</p></div><div className="prototype-header-controls"><label className="prototype-inline-field">Date range<select className="field" value={onboardingRange} onChange={(event) => setOnboardingRange(event.target.value)}><option>Last 7 days</option><option>Last 30 days</option><option>Last 90 days</option></select></label><button type="button" className="btn" onClick={() => document.getElementById("new-tenant-form")?.scrollIntoView({ behavior: "smooth" })}>+ New tenant</button></div></div>
-              <section className="platform-kpis"><article className="prototype-kpi"><span>New signups</span><strong>—</strong><small>Signup telemetry is not available from this API</small></article><article className="prototype-kpi"><span>In setup</span><strong>{state.organizations.filter((o) => o.status !== "active").length}</strong><small>Provisioning or inactive tenants</small></article><article className="prototype-kpi"><span>Activated</span><strong>{activeTenants}</strong><small>Active tenants</small></article><article className="prototype-kpi"><span>Median time to first use</span><strong>—</strong><small>Activation timing is not provided</small></article></section>
-              <div className="g2 mb-5"><section className="platform-card"><div className="platform-card-header"><h2>Activation funnel</h2><span className="muted">Live provisioning states</span></div><div className="sc"><table><thead><tr><th>Stage</th><th>Tenants</th><th>Conversion</th></tr></thead><tbody>{onboardingFunnel.map(([stage, count], index) => <tr key={stage}><td>{stage}</td><td>{count}</td><td>{index === 0 || count === "—" ? "—" : "—"}</td></tr>)}</tbody></table></div><p className="p-4 muted text-sm">Booking and patient activation telemetry is not available from the control-plane API.</p></section><section className="platform-card"><div className="platform-card-header"><h2>Needs attention</h2><span className="muted">{attentionTenants}</span></div><div className="platform-card-body">{state.organizations.filter((o) => o.last_error || o.status !== "active").slice(0, 5).map((o) => <div className="ai" key={o.id}><div><strong>{o.name}</strong><p className="muted text-sm">{o.last_error || `Status: ${o.status}`}</p></div><span className="prototype-badge prototype-badge-warn">Open</span><a className="btn-secondary" href="/admin/tenants/">Review</a></div>)}{attentionTenants === 0 && <p className="muted">No onboarding blockers reported.</p>}</div></section></div>
-              <form id="new-tenant-form" className="platform-card frm platform-new-tenant-form" onSubmit={provision}>
-                <div className="prototype-section-head platform-new-tenant-header" style={{ gridColumn: "1 / -1" }}><div><h2>New tenant</h2><p className="muted text-sm">Provision the organization, first location and organization-scoped administrator.</p></div></div>
-                <Field label="Organization name">
-                  <input className="field" name="name" required />
-                </Field>
-                <Field label="Routing slug">
-                  <input
-                    className="field"
-                    name="slug"
-                    pattern="[a-z0-9-]+"
-                    required
-                  />
-                </Field>
-                <Field label="Region">
-                  <select className="field" name="region" defaultValue="CA" required>
-                    {(state.type === "ready" ? state.regions.filter((region) => region.enabled) : []).map((region) => (
-                      <option key={region.code} value={region.code}>{region.code} · {region.name}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="First location">
-                  <input className="field" name="location" required />
-                </Field>
-                <Field label="Administrator name">
-                  <input className="field" name="admin_name" required />
-                </Field>
-                <Field label="Administrator email">
-                  <input
-                    className="field"
-                    name="admin_email"
-                    type="email"
-                    required
-                  />
-                </Field>
-                <fieldset className="platform-checkbox-grid">
-                  <legend>Capabilities</legend>
-                  <label>
-                    <input type="checkbox" name="front_office" defaultChecked />{" "}
-                    Front Office
-                  </label>
-                  <label>
-                    <input type="checkbox" name="booking" defaultChecked />{" "}
-                    Booking
-                  </label>
-                  <label>
-                    <input type="checkbox" name="portal" defaultChecked />{" "}
-                    Patient Portal
-                  </label>
-                </fieldset>
-                <div className="platform-form-actions"><button className="btn">Provision tenant</button></div>
-              </form>
-              <section className="platform-card mt-5 overflow-auto"><div className="platform-card-header platform-onboarding-header"><div><h2>Tenants in onboarding</h2><span className="muted">{filteredOnboardingOrganizations.length} matching records</span></div><form className="prototype-filter-bar" onSubmit={(event) => event.preventDefault()}><input className="field" value={onboardingSearch} onChange={(event) => setOnboardingSearch(event.target.value)} placeholder="Search tenants…" aria-label="Search onboarding tenants" /><select className="field" value={onboardingStageFilter} onChange={(event) => setOnboardingStageFilter(event.target.value)} aria-label="Onboarding stage"><option value="all">All stages</option>{onboardingStageOptions.map((stage) => <option key={stage} value={stage}>{stage}</option>)}</select></form></div><table><thead><tr><th>Tenant</th><th>Plan</th><th>Stage</th><th>Signed up</th><th>CSM</th><th>Last activity</th><th>Blocker</th><th>Actions</th></tr></thead><tbody>{onboardingOrganizations.map((o) => <tr key={o.id}><td><strong>{o.name}</strong></td><td>{o.commercial?.plan_code || "—"}</td><td><span className="prototype-badge">{onboardingStage(o)}</span></td><td>—</td><td>—</td><td>—</td><td>{o.last_error || "—"}</td><td><a className="btn-secondary" href="/admin/tenants/">Open tenant</a></td></tr>)}</tbody></table>{!filteredOnboardingOrganizations.length && <p className="p-4 muted">No onboarding tenants match this filter.</p>}<p className="p-4 muted text-sm">Signup dates, CSM ownership, last activity, booking and patient activation telemetry are not available from the control-plane API.</p><div className="prototype-pagination"><span>{filteredOnboardingOrganizations.length ? `${(currentOnboardingPage - 1) * onboardingPageSize + 1}–${Math.min(currentOnboardingPage * onboardingPageSize, filteredOnboardingOrganizations.length)} of ${filteredOnboardingOrganizations.length}` : "0–0 of 0"}</span><button type="button" className="btn-secondary" disabled={currentOnboardingPage <= 1} onClick={() => setOnboardingPage((v) => Math.max(1, v - 1))}>Previous</button><button type="button" className="btn-secondary" disabled={currentOnboardingPage >= onboardingPages} onClick={() => setOnboardingPage((v) => Math.min(onboardingPages, v + 1))}>Next</button></div></section>
-            </>
-          )}
-
-          {page === "support" && (
-            <>
-              <div className="prototype-page-header"><div><h1>Support</h1><p className="muted">Tenant support queue and audited administrator recovery.</p></div><div className="prototype-segmented scope-toggle" aria-label="Ticket scope"><button type="button" className={supportScope === "all" ? "active" : ""} aria-pressed={supportScope === "all"} onClick={() => setSupportScope("all")}>All tickets</button><button type="button" className={supportScope === "mine" ? "active" : ""} aria-pressed={supportScope === "mine"} onClick={() => setSupportScope("mine")}>My queue</button></div></div>
-              <section className="platform-kpis"><article className="prototype-kpi"><span>Open tickets</span><strong>—</strong><small>Support ticket feed is not available</small></article><article className="prototype-kpi"><span>Unassigned</span><strong>—</strong><small>Support assignment telemetry unavailable</small></article><article className="prototype-kpi"><span>SLA at risk</span><strong>—</strong><small>SLA telemetry unavailable</small></article><article className="prototype-kpi"><span>Resolved today</span><strong>—</strong><small>Resolution telemetry unavailable</small></article></section>
-              <div className="g2"><section className="platform-card overflow-auto"><div className="platform-card-header"><h2>Ticket queue</h2><div className="prototype-filter-bar"><input className="field" placeholder="Search tickets…" disabled /><select className="field" disabled><option>All statuses</option></select><select className="field" disabled><option>All priorities</option></select></div></div><p className="p-4 muted">Support ticket feed is not available from the current control-plane API.</p></section>
-              <form className="platform-card" onSubmit={recoverAdministrator}>
-                <div className="platform-card-header"><h2>Restricted actions</h2><span className="prototype-badge">Audited</span></div><div className="platform-card-body">
-                <p className="muted text-sm">
-                  Cross-tenant administrator recovery is reserved for verified
-                  lockouts. Tenant authorization approval remains inside the
-                  tenant.
-                </p>
-                <Field label="Tenant">
-                  <select
-                    className="field"
-                    value={selectedId}
-                    onChange={(event) => setSelectedId(event.target.value)}
-                    required
-                  >
-                    <option value="">Select tenant…</option>
-                    {state.organizations.map((organization) => (
-                      <option key={organization.id} value={organization.id}>
-                        {organization.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Administrator email">
-                  <input className="field" name="email" type="email" required />
-                </Field>
-                <input type="hidden" name="action" value="password_reset" />
-                <Field label="Reason (required)">
-                  <textarea
-                    className="field"
-                    name="reason"
-                    minLength={10}
-                    required
-                  />
-                </Field>
-                <button className="btn" disabled={!selectedId}>
-                  Send one-time reset link
-                </button>
-                </div>
-              </form>
-              </div>
-            </>
-          )}
-
-          {page === "settings-integrations" && (
-            <>
-            <div className="prototype-page-header">
-              <div>
-                <h1>{meta.title}</h1>
-                <p className="muted">{meta.description}</p>
-              </div>
-            </div>
-            <div className="grid gap-5 xl:grid-cols-2">
-              <section className="panel overflow-auto">
-                <div className="prototype-section-head">
-                  <div>
-                    <h2>Operational state</h2>
-                    <p>Live registry and selected-provider readiness.</p>
-                  </div>
-                </div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Capability</th>
-                      <th>Provider</th>
-                      <th>State</th>
-                      <th>Environment</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {state.integrationStatus.map((row) => (
-                      <tr key={row.capability}>
-                        <td>
-                          <strong>{row.capability.replaceAll("_", " ")}</strong>
-                        </td>
-                        <td>{row.provider_name || "Not configured"}</td>
-                        <td>
-                          <span
-                            className={`prototype-badge prototype-badge-${row.ready ? "good" : "warn"}`}
-                          >
-                            {row.state}
-                          </span>
-                        </td>
-                        <td>{row.sandbox_only ? "Sandbox" : "Live-capable"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </section>
-              <section className="panel overflow-auto">
-                <h2 className="mb-3 font-semibold">
-                  Integration customization requests
-                </h2>
-                {state.integrationRequests.length === 0 ? (
-                  <p className="muted text-sm">No integration requests.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {pagedIntegrationRequests.map((request) => (
-                      <form
-                        key={request.id}
-                        className="rounded-md border border-[var(--border)] p-3"
-                        onSubmit={(event) =>
-                          void decideIntegration(event, request.id)
-                        }
-                      >
-                        <div className="flex justify-between gap-3">
-                          <div>
-                            <strong>
-                              {request.capability} · {request.provider_name}
-                            </strong>
-                            <p className="muted text-xs">
-                              Tenant {request.organization_id}
-                            </p>
-                          </div>
-                          <span>{request.status}</span>
-                        </div>
-                        <p className="my-2 text-sm">{request.reason}</p>
-                        {request.status === "pending" && (
-                          <>
-                            <Field label="Decision reason">
-                              <input
-                                className="field"
-                                name="reason"
-                                minLength={10}
-                                required
-                              />
-                            </Field>
-                            {integrationApprovals[request.id] && (
-                              <a
-                                className="mt-2 block text-xs font-semibold text-[var(--sage-deep)]"
-                                href="/admin/settings/roles/?tab=approvals"
-                              >
-                                Approval{" "}
-                                {integrationApprovals[request.id].slice(0, 8)} ·
-                                review status
-                              </a>
-                            )}
-                            <div className="mt-2 flex gap-2">
-                              <button
-                                className="btn"
-                                name="decision"
-                                value="approved"
-                              >
-                                {integrationApprovals[request.id]
-                                  ? "Execute approved activation"
-                                  : "Submit approval"}
-                              </button>
-                              {!integrationApprovals[request.id] && (
-                                <button
-                                  className="btn-secondary"
-                                  name="decision"
-                                  value="rejected"
-                                >
-                                  Reject
-                                </button>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </form>
-                    ))}
-                    {state.integrationRequests.length > 0 && <div className="prototype-pagination"><span>{(currentIntegrationRequestPage - 1) * integrationRequestPageSize + 1}–{Math.min(currentIntegrationRequestPage * integrationRequestPageSize, state.integrationRequests.length)} of {state.integrationRequests.length}</span><button type="button" className="btn-secondary" disabled={currentIntegrationRequestPage <= 1} onClick={() => setIntegrationRequestPage((value) => Math.max(1, value - 1))}>Previous</button><button type="button" className="btn-secondary" disabled={currentIntegrationRequestPage >= integrationRequestPages} onClick={() => setIntegrationRequestPage((value) => Math.min(integrationRequestPages, value + 1))}>Next</button></div>}
-                  </div>
-                )}
-              </section>
-            </div>
-            </>
-          )}
-
-          {PLATFORM_PROTOTYPE_PAGES.includes(page as typeof PLATFORM_PROTOTYPE_PAGES[number]) && (
-            <PlatformPrototypePage
-              page={
-                page as Exclude<
-                  PlatformPage,
-                  | "overview"
-                  | "tenants"
-                  | "onboarding"
-                  | "support"
-                  | "settings-integrations"
-                >
-              }
-            />
-          )}
+          <PlatformPageContent model={pageModel} />
         </main>
       </div>
     </div>

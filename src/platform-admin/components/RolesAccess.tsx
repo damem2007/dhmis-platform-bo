@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { api } from './api';
+import { api } from '../lib/api';
 
 type Domain = 'tenant' | 'platform';
 type Page<T> = { page: number; size: number; total: number; pages: number; items: T[] };

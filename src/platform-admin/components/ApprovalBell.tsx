@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
-import { api } from './api';
+import { api } from '../lib/api';
 
 export type ApprovalNotification = {
   request_id?: string;

@@ -19,6 +19,13 @@ export type ApprovalNotification = {
 export type ApprovalNotificationFeed = { items: ApprovalNotification[]; unread_count: number };
 type SystemNotificationFeed = { items: ApprovalNotification[]; unread_count: number; page: number; pages: number };
 
+function needsAttention(item: ApprovalNotification) {
+  return Boolean(item.cta_label)
+    || item.kind === 'action'
+    || item.kind === 'waiting'
+    || ['pending', 'retry', 'failed'].includes(item.status);
+}
+
 function notificationCta(item: ApprovalNotification) {
   if (item.cta_label) return item.cta_label;
   if (item.request_id) {
@@ -70,8 +77,10 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
       severity: item.status === 'rejected' || item.status === 'conflicted' || item.status === 'expired' ? 'danger' as const : item.kind === 'action' || item.kind === 'waiting' ? 'warning' as const : 'info' as const,
     }));
     const systemItems = system.items.map((item) => ({ ...item, kind: `system:${item.kind}` }));
+    const items = [...approvalItems, ...systemItems];
+    const attentionCount = items.filter(needsAttention).length;
     setSystemPages(Math.max(1, system.pages || 1));
-    setFeed({ items: [...approvalItems, ...systemItems], unread_count: approvals.unread_count + system.unread_count });
+    setFeed({ items, unread_count: Math.max(approvals.unread_count + system.unread_count, attentionCount) });
   }
   async function openApprovals() {
     try { await api(`${prefix}/notifications/seen`, {}); } catch { /* Keep navigation available. */ }
@@ -96,13 +105,16 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
     return () => { document.removeEventListener('mousedown', dismiss); document.removeEventListener('keydown', dismiss); };
   }, []);
 
+  const attentionCount = feed.items.filter(needsAttention).length;
+  const displayCount = Math.max(feed.unread_count, attentionCount);
+
   return <div className="approval-bell" ref={root}>
-    <button type="button" aria-label={`Approvals and notifications${feed.unread_count ? `, ${feed.unread_count} need attention` : ''}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+    <button type="button" aria-label={`Approvals and notifications${displayCount ? `, ${displayCount} need attention` : ''}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
       <Bell size={17} aria-hidden="true" />
-      {feed.unread_count > 0 && <span aria-hidden="true">{feed.unread_count > 99 ? '99+' : feed.unread_count}</span>}
+      {displayCount > 0 && <span aria-hidden="true">{displayCount > 99 ? '99+' : displayCount}</span>}
     </button>
     {open && <div className="approval-bell-menu" role="menu">
-      <div className="approval-bell-menu-header"><strong>Notifications</strong><small>{feed.unread_count ? `${feed.unread_count} need your attention` : 'Nothing needs your attention'}</small></div>
+      <div className="approval-bell-menu-header"><strong>Notifications</strong><small>{attentionCount ? `${attentionCount} need your attention` : 'Nothing needs your attention'}</small></div>
       {feed.items.slice(0, 8).map((item) => <button key={`${item.kind}-${item.request_id || item.id}`} type="button" role="menuitem" className={`${item.kind === 'waiting' ? 'is-waiting' : ''} ${item.severity ? `is-${item.severity}` : ''}`} onClick={() => item.request_id ? void openApprovals() : setOpen(false)}><span className="approval-bell-icon" aria-hidden="true">{notificationGlyph(item)}</span><span className="approval-bell-copy"><strong>{item.title}</strong><small>{item.detail}</small><time dateTime={item.created_at}>{relativeTime(item.created_at)}</time><span className="approval-bell-cta">{notificationCta(item)} <span aria-hidden="true">→</span></span></span></button>)}
       {!feed.items.length && <p>No notifications.</p>}
       <div className="approval-bell-pagination"><button type="button" disabled={systemPage <= 1} onClick={() => setSystemPage((page) => page - 1)}>Previous</button><span>Page {systemPage} of {systemPages}</span><button type="button" disabled={systemPage >= systemPages} onClick={() => setSystemPage((page) => page + 1)}>Next</button></div>

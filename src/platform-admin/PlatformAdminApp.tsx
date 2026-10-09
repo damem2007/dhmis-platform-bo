@@ -78,6 +78,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const [settingsOpen, setSettingsOpen] = useState(page.startsWith("settings-"));
   const [helpOpen, setHelpOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => window.localStorage.getItem("dhmis.platform.theme") === "dark" ? "dark" : "light");
+  const [showPassword, setShowPassword] = useState(false);
   //const [user, setUser] = useState<User | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountView, setAccountView] = useState<AccountView>(null);
@@ -118,6 +119,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     const timer = window.setTimeout(() => setNotice(null), 4500);
     return () => window.clearTimeout(timer);
   }, [state.type, notice?.state, notice?.message]);
+  useEffect(() => setShowPassword(false), [state.type]);
   /**
    * Dummy Admin User
    */
@@ -525,13 +527,23 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
               <input className="field" name="email" type="email" required />
             </Field>}
             <Field label={state.type === "invite" || state.type === "reset" ? "New password" : "Password"}>
-              <input
-                className="field"
-                name="password"
-                type="password"
-                minLength={state.type === "login" ? 1 : 12}
-                required
-              />
+              <div className="password-field">
+                <input
+                  className="field"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete={state.type === "login" ? "current-password" : "new-password"}
+                  minLength={state.type === "login" ? 1 : 12}
+                  required
+                />
+                <button
+                  type="button"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
             </Field>
             <button className="btn platform-auth-primary">
               {state.type === "login"

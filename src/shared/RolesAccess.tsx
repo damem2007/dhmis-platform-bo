@@ -14,9 +14,38 @@ type FourEyesRule = { id: string; name: string; scope: 'Off' | 'Tenant' | 'Platf
 type RuleOverlap = { permission_key: string; label: string; match_count: number; rules: { id: string; name: string; priority: number; governs: boolean }[] };
 type PolicyData = { settings: ApprovalSettings; rules: Page<FourEyesRule>; overlaps: RuleOverlap[]; awaiting_review: Permission[] };
 type Tab = 'roles' | 'compare' | 'effective' | 'approvals' | 'policy' | 'history';
+type ResourceGroup = { key: string; name: string; permissions: Permission[] };
+type ModuleGroup = { key: string; name: string; resources: ResourceGroup[] };
 
 const emptyPage = <T,>(): Page<T> => ({ page: 1, size: 10, total: 0, pages: 0, items: [] });
 const tone = (status: string) => status === 'published' || status === 'approved' || status === 'applied' ? 'good' : status === 'pending' ? 'info' : status === 'rejected' || status === 'conflicted' ? 'danger' : 'neutral';
+const baseActions = new Set(['read', 'create', 'update']);
+const actionLabel = (action: string) => action.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+function resourceLevel(resource: ResourceGroup, grants: Record<string, Grant>): 'n' | 'r' | 'w' {
+  const read = grants[resource.permissions.find((permission) => permission.action === 'read')?.key || ''];
+  if (read?.effect !== 'allow') return 'n';
+  const writable = resource.permissions.filter((permission) => permission.action === 'create' || permission.action === 'update');
+  return writable.length > 0 && writable.every((permission) => grants[permission.key]?.effect === 'allow') ? 'w' : 'r';
+}
+
+function setResourceLevelDraft(current: Record<string, Grant>, resource: ResourceGroup, level: 'n' | 'r' | 'w') {
+  const next = { ...current };
+  resource.permissions.forEach((permission) => {
+    if (level === 'n' || (level === 'r' && !['read'].includes(permission.action))) {
+      delete next[permission.key];
+      return;
+    }
+    if (!baseActions.has(permission.action)) return;
+    next[permission.key] = {
+      permission_key: permission.key,
+      effect: 'allow',
+      scope: next[permission.key]?.scope || permission.valid_scopes[0] || 'Organization',
+      conditions: next[permission.key]?.conditions || {},
+    };
+  });
+  return next;
+}
 
 export function RolesAccess({ domain }: { domain: Domain }) {
   const prefix = domain === 'platform' ? '/platform/rbac' : '/rbac';
@@ -37,9 +66,11 @@ export function RolesAccess({ domain }: { domain: Domain }) {
   const [selectedId, setSelectedId] = useState('');
   const [draftGrants, setDraftGrants] = useState<Record<string, Grant>>({});
   const [search, setSearch] = useState('');
+  const [permissionFilter, setPermissionFilter] = useState<'all' | 'granted' | 'high' | 'fourEyes' | 'changed'>('all');
   const [permissionPage, setPermissionPage] = useState(1);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [newRoleOpen, setNewRoleOpen] = useState(false);
   const [checkKey, setCheckKey] = useState('');
   const [checkUser, setCheckUser] = useState('');
   const [decision, setDecision] = useState<Decision | null>(null);
@@ -83,12 +114,35 @@ export function RolesAccess({ domain }: { domain: Domain }) {
     if (!selected) return;
     setDraftGrants(Object.fromEntries(selected.grants.map((grant) => [grant.permission_key, grant])));
   }, [selectedId, roles.items]);
+  useEffect(() => {
+    if (!newRoleOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setNewRoleOpen(false); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [newRoleOpen]);
 
-  const modules = useMemo(() => {
-    const grouped = new Map<string, Permission[]>();
-    permissions.items.forEach((permission) => grouped.set(permission.module_name, [...(grouped.get(permission.module_name) || []), permission]));
-    return [...grouped.entries()];
+  const modules = useMemo<ModuleGroup[]>(() => {
+    const grouped = new Map<string, ModuleGroup>();
+    permissions.items.forEach((permission) => {
+      const moduleKey = permission.module_id || permission.module_name;
+      const module = grouped.get(moduleKey) || { key: moduleKey, name: permission.module_name, resources: [] };
+      const resource = module.resources.find((item) => item.key === permission.resource_key);
+      if (resource) resource.permissions.push(permission);
+      else module.resources.push({ key: permission.resource_key, name: permission.resource_name, permissions: [permission] });
+      grouped.set(moduleKey, module);
+    });
+    return [...grouped.values()];
   }, [permissions.items]);
+  const visibleModules = useMemo(() => modules.map((module) => ({
+    ...module,
+    resources: module.resources.filter((resource) => {
+      if (permissionFilter === 'all') return true;
+      if (permissionFilter === 'high') return resource.permissions.some((permission) => permission.risk >= 3);
+      if (permissionFilter === 'fourEyes') return resource.permissions.some((permission) => permission.requires.length > 0);
+      if (permissionFilter === 'granted') return resourceLevel(resource, draftGrants) !== 'n' || resource.permissions.some((permission) => draftGrants[permission.key]);
+      return resource.permissions.some((permission) => draftGrants[permission.key] || selected?.grants.some((grant) => grant.permission_key === permission.key));
+    }),
+  })).filter((module) => module.resources.length > 0), [modules, permissionFilter, draftGrants, selected]);
 
   function updateGrant(permission: Permission, effect: '' | 'allow' | 'deny', scope?: string) {
     setDraftGrants((current) => {
@@ -98,9 +152,28 @@ export function RolesAccess({ domain }: { domain: Domain }) {
       return next;
     });
   }
+  function setResourceLevel(resource: ResourceGroup, level: 'n' | 'r' | 'w') {
+    if (!selected || selected.locked) return;
+    setDraftGrants((current) => setResourceLevelDraft(current, resource, level));
+  }
+  function setModuleLevel(module: ModuleGroup, level: 'n' | 'r' | 'w') {
+    if (!selected || selected.locked) return;
+    setDraftGrants((current) => module.resources.reduce((draft, resource) => setResourceLevelDraft(draft, resource, level), current));
+  }
+  function cycleAction(permission: Permission, resource: ResourceGroup) {
+    if (!selected || selected.locked || resourceLevel(resource, draftGrants) === 'n') return;
+    const current = (draftGrants[permission.key]?.effect ?? '') as '' | 'allow' | 'deny';
+    const nextEffect: '' | 'allow' | 'deny' = current === 'allow' ? 'deny' : current === 'deny' ? '' : 'allow';
+    updateGrant(permission, nextEffect);
+  }
+  function discardChanges() {
+    if (!selected) return;
+    setDraftGrants(Object.fromEntries(selected.grants.map((grant) => [grant.permission_key, grant])));
+    setMessage('Changes discarded.');
+  }
   async function createRole(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const form = new FormData(event.currentTarget);
-    await act(async () => { const role = await api<Role>(`${prefix}/roles`, { name: form.get('name'), description: form.get('description'), copy_from_id: form.get('copy_from_id') || null }); await loadRoles(role.id); event.currentTarget.reset(); });
+    await act(async () => { const role = await api<Role>(`${prefix}/roles`, { name: form.get('name'), description: form.get('description'), copy_from_id: form.get('copy_from_id') || null }); await loadRoles(role.id); event.currentTarget.reset(); setNewRoleOpen(false); });
   }
   async function updateDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!selected) return; const form = new FormData(event.currentTarget);
@@ -155,23 +228,57 @@ export function RolesAccess({ domain }: { domain: Domain }) {
   }
 
   return <section className="rbac-page" aria-busy={busy}>
-    <div className="prototype-section-head"><div><h2>Roles &amp; access</h2><p>{domain === 'platform' ? 'Platform identities and control-plane permissions.' : 'Tenant staff roles, scope, and maker-checker governance.'}</p></div><span className="prototype-badge prototype-badge-info">{domain === 'platform' ? 'Platform' : 'Tenant'} domain</span></div>
+    <div className="prototype-page-header rbac-page-header">
+      <div>
+        <h1>Roles &amp; access</h1>
+        <p className="muted">{permissions.total ? `${permissions.total} ${domain} permissions from the DHMIS catalogue.` : `${domain === 'platform' ? 'Platform identities and control-plane permissions.' : 'Tenant staff roles, scope, and maker-checker governance.'}`}</p>
+      </div>
+      <button className="btn" type="button" onClick={() => setNewRoleOpen(true)}>+ Add role</button>
+    </div>
     {message && <p className="prototype-callout" role="status">{message}</p>}
     <div className="prototype-tabs" role="tablist">{(['roles', 'compare', 'effective', 'approvals', 'policy', 'history'] as Tab[]).map((item) => <button key={item} type="button" role="tab" aria-selected={tab === item} onClick={() => setTab(item)}>{item === 'effective' ? 'Effective access' : item === 'policy' ? 'Approval policy' : item[0].toUpperCase() + item.slice(1)}{item === 'approvals' && requests.items.filter((request) => request.status === 'pending').length > 0 ? ` (${requests.items.filter((request) => request.status === 'pending').length})` : ''}</button>)}</div>
 
     {tab === 'roles' && <>
-      <form className="rbac-add-role" onSubmit={createRole}><input className="field" name="name" minLength={3} placeholder="New role name" required /><input className="field" name="description" placeholder="Description" /><select className="field" name="copy_from_id" defaultValue=""><option value="">Start empty</option>{roles.items.filter((role) => role.status === 'published' && !role.locked).map((role) => <option key={role.id} value={role.id}>Copy {role.name}</option>)}</select><button className="btn" disabled={busy}>Add role</button></form>
+      {!!policy?.awaiting_review.length && <p className="rbac-review-note">{policy.awaiting_review.length} new permissions from the latest release need classification. <button type="button" className="link" onClick={() => setTab('policy')}>Review</button></p>}
       <div className="prototype-roles-layout">
-        <aside className="panel prototype-role-list">{roles.items.map((role) => <button type="button" key={role.id} aria-current={selected?.id === role.id ? 'page' : undefined} onClick={() => setSelectedId(role.id)}><strong>{role.name}</strong><span>{role.status} · {role.user_count} users · {role.permission_count} grants</span></button>)}</aside>
-        <section className="panel min-w-0"><div className="prototype-section-head"><div><h2>{selected?.name || 'No role selected'}</h2><p>{selected?.description || 'Create a role to configure access.'}</p></div>{selected && <div className="rbac-role-actions"><span className={`prototype-badge prototype-badge-${tone(selected.status)}`}>{selected.locked ? 'Locked · ' : ''}{selected.status}</span>{!selected.locked && selected.status === 'draft' && <button className="btn-secondary" type="button" onClick={() => void lifecycle('delete')}>Delete draft</button>}{!selected.locked && selected.status === 'published' && <><button className="btn-secondary" type="button" onClick={() => void lifecycle('deactivate')}>Deactivate</button><button className="btn-secondary" type="button" disabled={selected.user_count > 0} title={selected.user_count ? 'Reassign its users first' : ''} onClick={() => void lifecycle('archive')}>Archive</button></>}{!selected.locked && selected.status === 'inactive' && <><button className="btn-secondary" type="button" onClick={() => void lifecycle('reactivate')}>Reactivate</button><button className="btn-secondary" type="button" disabled={selected.user_count > 0} title={selected.user_count ? 'Reassign its users first' : ''} onClick={() => void lifecycle('archive')}>Archive</button></>}{!selected.locked && selected.status === 'archived' && <button className="btn-secondary" type="button" onClick={() => void lifecycle('restore')}>Restore</button>}</div>}</div>
+        <aside className="panel prototype-role-list rbac-role-list" aria-label="Roles">
+          <div className="rbac-domain-toggle" role="group" aria-label="Role type">
+            <button type="button" aria-pressed={domain === 'tenant'} disabled={domain !== 'tenant'}>Tenant</button>
+            <button type="button" aria-pressed={domain === 'platform'} disabled={domain !== 'platform'}>Platform</button>
+          </div>
+          {roles.items.map((role) => <button type="button" key={role.id} aria-current={selected?.id === role.id ? 'page' : undefined} onClick={() => setSelectedId(role.id)}><strong>{role.name}{role.locked ? ' 🔒' : ''}</strong><span>{role.user_count} users · {role.permission_count} permissions{role.parent_id ? ' · inherited' : ''}</span></button>)}
+        </aside>
+        <section className="panel min-w-0 rbac-role-card">
+          <div className="prototype-section-head rbac-role-card-header"><div><h2>{selected?.name || 'No role selected'}</h2><p>{selected?.description || 'Create a role to configure access.'}</p></div>{selected && <div className="rbac-role-actions"><span className={`prototype-badge prototype-badge-${tone(selected.status)}`}>{selected.locked ? 'Locked · ' : ''}{selected.status}</span>{!selected.locked && selected.status === 'draft' && <button className="btn-secondary" type="button" onClick={() => void lifecycle('delete')}>Delete draft</button>}{!selected.locked && selected.status === 'published' && <><button className="btn-secondary" type="button" onClick={() => void lifecycle('deactivate')}>Deactivate</button><button className="btn-secondary" type="button" disabled={selected.user_count > 0} title={selected.user_count ? 'Reassign its users first' : ''} onClick={() => void lifecycle('archive')}>Archive</button></>}{!selected.locked && selected.status === 'inactive' && <><button className="btn-secondary" type="button" onClick={() => void lifecycle('reactivate')}>Reactivate</button><button className="btn-secondary" type="button" disabled={selected.user_count > 0} title={selected.user_count ? 'Reassign its users first' : ''} onClick={() => void lifecycle('archive')}>Archive</button></>}{!selected.locked && selected.status === 'archived' && <button className="btn-secondary" type="button" onClick={() => void lifecycle('restore')}>Restore</button>}</div>}</div>
           {selected?.status === 'draft' && !selected.locked && <form className="rbac-draft-details" onSubmit={updateDraft}><label className="label">Role name<input className="field" name="name" minLength={3} defaultValue={selected.name} key={`${selected.id}-name`} required /></label><label className="label">Description<input className="field" name="description" defaultValue={selected.description} key={`${selected.id}-description`} /></label><button className="btn-secondary self-end" disabled={busy}>Save details</button></form>}
-          {selected && <p className="rbac-assignable">{selected.status === 'published' ? '✓ Assignable when creating accounts and inviting staff.' : `✕ Not assignable: ${selected.status === 'draft' ? 'publish this role first.' : selected.status === 'inactive' ? 'the role is inactive.' : selected.status === 'archived' ? 'the role is archived.' : 'waiting for approval.'}`}</p>}
-          {selected && <><form className="prototype-controls" onSubmit={(event) => { event.preventDefault(); void loadPermissions(1); }}><input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search permissions…" /><button className="btn-secondary">Search</button></form><div className="rbac-permission-list">{modules.map(([module, items]) => <details key={module} open><summary><strong>{module}</strong><span>{items.filter((item) => draftGrants[item.key]?.effect === 'allow').length} of {items.length} allowed on this page</span></summary><div className="overflow-auto"><table><thead><tr><th>Resource / action</th><th>Access</th><th>Scope</th><th>Risk</th></tr></thead><tbody>{items.map((permission) => { const grant = draftGrants[permission.key]; return <tr key={permission.key}><td><strong>{permission.resource_name}</strong><div className="muted text-xs"><code>{permission.key}</code>{permission.requires.length ? ` · requires ${permission.requires.join(', ')}` : ''}</div></td><td><select className="field" aria-label={`${permission.key} access`} value={grant?.effect || ''} disabled={selected.locked} onChange={(event) => updateGrant(permission, event.target.value as '' | 'allow' | 'deny')}><option value="">No access</option><option value="allow">Allow</option><option value="deny">Deny</option></select></td><td>{grant ? <select className="field" aria-label={`${permission.key} scope`} value={grant.scope} disabled={selected.locked} onChange={(event) => updateGrant(permission, grant.effect, event.target.value)}>{permission.valid_scopes.map((scope) => <option key={scope}>{scope}</option>)}</select> : <span className="muted">—</span>}</td><td><span className={`prototype-badge ${permission.risk >= 3 ? 'prototype-badge-warn' : ''}`}>{['', 'Low', 'Medium', 'High', 'Critical'][permission.risk]}</span></td></tr>; })}</tbody></table></div></details>)}</div><div className="prototype-pagination"><span>Page {permissions.page} of {permissions.pages || 1} · {permissions.total} permissions</span><button className="btn-secondary" disabled={permissions.page <= 1} onClick={() => void loadPermissions(permissions.page - 1)}>Previous</button><button className="btn-secondary" disabled={permissions.page >= permissions.pages} onClick={() => void loadPermissions(permissions.page + 1)}>Next</button></div></>}
+          {selected && <p className="rbac-assignable">{selected.status === 'published' ? `✓ Assignable when creating accounts and inviting staff.${selected.user_count ? ` ${selected.user_count} users hold it now.` : ''}` : `✕ Not assignable: ${selected.status === 'draft' ? 'publish this role first.' : selected.status === 'inactive' ? 'the role is inactive.' : selected.status === 'archived' ? 'the role is archived.' : 'waiting for approval.'}`}</p>}
+          {selected && <>
+            <div className="rbac-permission-toolbar">
+              <label className="rbac-search-label" htmlFor="permission-search"><strong>Search permissions</strong></label>
+              <form className="rbac-search-form" onSubmit={(event) => { event.preventDefault(); void loadPermissions(1); }}><input id="permission-search" className="field" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Resource or action, e.g. refund" /><button className="btn-secondary">Search</button></form>
+              {([['all', 'All'], ['granted', 'Granted'], ['high', 'High risk'], ['fourEyes', 'Four-eyes'], ['changed', 'Changed']] as const).map(([key, label]) => <button key={key} type="button" className="rbac-filter-chip" aria-pressed={permissionFilter === key} onClick={() => setPermissionFilter(key)}>{label}</button>)}
+              <button type="button" className="btn-secondary rbac-small-button" onClick={() => document.querySelectorAll<HTMLDetailsElement>('.rbac-module').forEach((element) => { element.open = true; })}>Expand all</button>
+              <button type="button" className="btn-secondary rbac-small-button" onClick={() => document.querySelectorAll<HTMLDetailsElement>('.rbac-module').forEach((element) => { element.open = false; })}>Collapse all</button>
+            </div>
+            <p className="rbac-permission-note">{domain === 'platform' ? 'Platform permissions belong only to platform identities. They are never inherited from a tenant Super Admin.' : 'Tenant roles hold tenant permissions only.'} <strong>“Read &amp; write” means read, create and update; additional actions remain separate toggles.</strong> Click an action to cycle off → allowed → denied. <strong>Scope:</strong> Organization and Location set how far someone reaches; Assigned and Own narrow it to their own records. Change and Actions scopes can’t be wider than Read.</p>
+            <div className="rbac-legend"><span><span className="rbac-legend-chip">Grey</span> not set: inherits from the parent role, otherwise no access</span><span><span className="rbac-legend-chip allowed">✓ Green</span> allowed</span><span><span className="rbac-legend-chip denied">✕ Red</span> denied: overrides everything</span><span>Dashed: inherited</span><span>🛡 four-eyes</span><span>🔒 restricted</span><span>Amber/red border: high/critical risk</span></div>
+            {selected.locked && <div className="warn">Protected role: every {domain} permission. It can’t be edited.</div>}
+            <div className="rbac-permission-list">{visibleModules.map((module) => {
+              const permissionCount = module.resources.reduce((total, resource) => total + resource.permissions.length, 0);
+              const allowedCount = module.resources.reduce((total, resource) => total + resource.permissions.filter((permission) => draftGrants[permission.key]?.effect === 'allow').length, 0);
+              return <details className="rbac-module" key={module.key}>
+                <summary className="rbac-module-header"><strong>{module.key} · {module.name}</strong><span>{allowedCount} of {permissionCount} allowed <span className="rbac-module-actions"><button type="button" className="btn-secondary rbac-small-button" disabled={selected.locked} onClick={(event) => { event.preventDefault(); setModuleLevel(module, 'r'); }}>Read</button><button type="button" className="btn-secondary rbac-small-button" disabled={selected.locked} onClick={(event) => { event.preventDefault(); setModuleLevel(module, 'w'); }}>Read &amp; write</button><button type="button" className="btn-secondary rbac-small-button" disabled={selected.locked} onClick={(event) => { event.preventDefault(); setModuleLevel(module, 'n'); }}>Clear</button></span></span></summary>
+                <div className="rbac-module-body">{module.resources.map((resource) => { const level = resourceLevel(resource, draftGrants); return <div className="rbac-resource-row" key={resource.key}><div><strong>{resource.name}</strong><code>{resource.key}</code></div><div className="rbac-resource-controls"><span className="rbac-level-control" role="group" aria-label={`${resource.name} access`}><button type="button" aria-pressed={level === 'n'} disabled={selected.locked} onClick={() => setResourceLevel(resource, 'n')}>No access</button><button type="button" aria-pressed={level === 'r'} disabled={selected.locked} onClick={() => setResourceLevel(resource, 'r')}>Read only</button><button type="button" aria-pressed={level === 'w'} disabled={selected.locked} onClick={() => setResourceLevel(resource, 'w')}>Read &amp; write</button></span></div><div className="rbac-action-chips">{resource.permissions.filter((permission) => !baseActions.has(permission.action)).map((permission) => { const grant = draftGrants[permission.key]; const isAllowed = grant?.effect === 'allow'; const isDenied = grant?.effect === 'deny'; const requiresRead = level === 'n'; return <button type="button" key={permission.key} className={`rbac-action-chip ${isAllowed ? 'allowed' : ''} ${isDenied ? 'denied' : ''} ${permission.risk >= 3 ? 'high-risk' : ''}`} disabled={selected.locked || requiresRead} title={permission.key} aria-label={`${actionLabel(permission.action)}: ${isDenied ? 'denied' : isAllowed ? 'allowed' : 'off'}${requiresRead ? ', requires read' : ''}`} onClick={() => cycleAction(permission, resource)}>{isAllowed ? '✓ ' : isDenied ? '✕ ' : ''}{actionLabel(permission.action)}{permission.requires.length ? ' 🛡' : ''}{permission.restricted ? ' 🔒' : ''}</button>; })}</div></div>; })}</div>
+              </details>;
+            })}</div>
+            <div className="prototype-pagination"><span>Page {permissions.page} of {permissions.pages || 1} · {permissions.total} permissions</span><button className="btn-secondary" disabled={permissions.page <= 1} onClick={() => void loadPermissions(permissions.page - 1)}>Previous</button><button className="btn-secondary" disabled={permissions.page >= permissions.pages} onClick={() => void loadPermissions(permissions.page + 1)}>Next</button></div>
+          </>}
         </section>
-        <aside className="panel rbac-review"><h2>Review changes</h2><p className="muted text-sm">{Object.keys(draftGrants).length} direct grants. Dependencies, scope, deny, SoD, and four-eyes rules are validated by the backend.</p>{selected && !selected.locked && <><button className="btn-secondary w-full" disabled={busy || selected.status !== 'draft'} onClick={() => void saveGrants()}>Save draft</button>{selected.status === 'draft' && <button className="btn-secondary w-full" disabled={busy} onClick={() => void publish()}>Publish if no approval is needed</button>}<form className="space-y-2" onSubmit={submitChange}><textarea className="field" name="reason" minLength={8} placeholder="Reason for governed change" required /><label className="flex gap-2 text-xs"><input type="checkbox" name="acknowledge" /> Acknowledge reported SoD conflicts</label><button className="btn w-full" disabled={busy}>Submit for approval</button></form></>}</aside>
+        <aside className="panel rbac-review"><h2>Review changes</h2><p className="muted text-sm">{selected?.locked ? 'No pending changes. Edits appear here with their impact before they take effect.' : `${Object.keys(draftGrants).length} direct grants. Dependencies, scope, deny, SoD, and four-eyes rules are validated by the backend.`}</p>{selected && !selected.locked && <form className="rbac-review-form" onSubmit={submitChange}><label className="label"><strong>Change reason</strong> (required)<input className="field" name="reason" minLength={8} placeholder="Why is this changing?" required /></label><button className="btn w-full" disabled={busy}>Save policy</button><button className="btn-secondary w-full" type="button" disabled={busy} onClick={discardChanges}>Discard changes</button><label className="flex gap-2 text-xs"><input type="checkbox" name="acknowledge" /> Acknowledge reported SoD conflicts</label></form>}</aside>
       </div>
     </>}
 
+    {newRoleOpen && <div className="rbac-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setNewRoleOpen(false); }}><div className="rbac-modal" role="dialog" aria-modal="true" aria-labelledby="new-role-title"><h2 id="new-role-title">Add role</h2><p className="muted">Create a draft role and assign permissions before publishing it.</p><form onSubmit={createRole}><label className="label">Role name<input className="field" name="name" minLength={3} placeholder="e.g. Treatment coordinator" required autoFocus /></label><label className="label">Description<input className="field" name="description" placeholder="What this role is for" /></label><label className="label">Copy permissions from<select className="field" name="copy_from_id" defaultValue=""><option value="">Start empty</option>{roles.items.filter((role) => role.status === 'published' && !role.locked).map((role) => <option key={role.id} value={role.id}>Copy permissions from {role.name}</option>)}</select></label><p className="muted text-sm">It is saved as a <strong>draft</strong>. Nobody can be assigned to it until you publish it.</p><div className="rbac-modal-actions"><button type="button" className="btn-secondary" onClick={() => setNewRoleOpen(false)}>Cancel</button><button className="btn" disabled={busy}>Create draft</button></div></form></div></div>}
     {tab === 'compare' && <section className="panel overflow-auto"><table><thead><tr><th>Role</th><th>Status</th><th>Users</th><th>Direct grants</th><th>Inheritance</th></tr></thead><tbody>{roles.items.map((role) => <tr key={role.id}><td><strong>{role.name}</strong></td><td>{role.status}</td><td>{role.user_count}</td><td>{role.permission_count}</td><td>{role.parent_id ? roles.items.find((item) => item.id === role.parent_id)?.name || role.parent_id : 'None'}</td></tr>)}</tbody></table></section>}
     {tab === 'effective' && <section className="panel max-w-4xl"><form className="grid gap-3 md:grid-cols-[1fr_1fr_auto]" onSubmit={checkAccess}><label className="label">Permission key<input className="field" value={checkKey} onChange={(event) => setCheckKey(event.target.value)} required placeholder="billing.payment.refund" /></label><label className="label">User ID (blank means me)<input className="field" value={checkUser} onChange={(event) => setCheckUser(event.target.value)} /></label><button className="btn self-end">Check access</button></form>{decision && <div className="mt-5 rounded-lg border border-[var(--border)] p-4"><div className="flex gap-2"><span className={`prototype-badge prototype-badge-${decision.allowed ? 'good' : 'danger'}`}>{decision.allowed ? 'Allowed' : 'Denied'}</span>{decision.reach && <span className="prototype-badge">{decision.reach}{decision.filter_scope ? ` · ${decision.filter_scope}` : ''}</span>}{decision.needs_approval && <span className="prototype-badge prototype-badge-warn">Approval required</span>}</div><ol className="mt-3 list-decimal space-y-1 pl-5 text-sm">{decision.trace.map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ol></div>}</section>}
     {tab === 'approvals' && <section className="panel overflow-auto"><table><thead><tr><th>Request</th><th>Maker / reason</th><th>Risk</th><th>Expires</th><th>Status</th><th>Actions</th></tr></thead><tbody>{requests.items.map((request) => <tr key={request.id}><td><strong>{request.kind.replaceAll('-', ' ')}</strong><div className="muted text-xs">{request.id}</div></td><td>{request.maker_id}<div className="muted text-xs">{request.reason}</div></td><td>{['', 'Low', 'Medium', 'High', 'Critical'][request.risk]}</td><td>{new Date(request.expires_at).toLocaleString()}</td><td><span className={`prototype-badge prototype-badge-${tone(request.status)}`}>{request.break_glass ? 'Break-glass · ' : ''}{request.status}</span></td><td>{request.status === 'pending' && <div className="flex flex-wrap gap-1"><button className="btn-secondary" onClick={() => void requestAction(request, 'approve')}>Approve</button><button className="btn-secondary" onClick={() => void requestAction(request, 'reject')}>Reject</button><button className="btn-secondary" onClick={() => void requestAction(request, 'withdraw')}>Withdraw</button></div>}</td></tr>)}</tbody></table>{!requests.items.length && <p className="muted p-4">No approval requests.</p>}</section>}

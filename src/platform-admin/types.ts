@@ -101,5 +101,6 @@ export type PlatformPageModel = {
   pagedIntegrationRequests: IntegrationRequest[];
   setIntegrationRequestPage: Dispatch<SetStateAction<number>>;
   decideIntegration: (event: FormEvent<HTMLFormElement>, requestId: string) => Promise<void>;
+  actionBusy: string | null;
 };
 export type { PlatformPage };

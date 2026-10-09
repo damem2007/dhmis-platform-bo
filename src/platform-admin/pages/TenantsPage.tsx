@@ -16,7 +16,7 @@ export function TenantsPage({ model }: { model: PlatformPageModel }) {
     filteredOnboardingOrganizations, onboardingOrganizations, onboardingPageSize, onboardingPages,
     currentOnboardingPage, setOnboardingPage, supportScope, setSupportScope, integrationApprovals,
     currentIntegrationRequestPage, integrationRequestPages, integrationRequestPageSize,
-    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration,
+    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration, actionBusy,
   } = model;
   return (<>
 {page === "tenants" && (
@@ -128,7 +128,7 @@ export function TenantsPage({ model }: { model: PlatformPageModel }) {
             </div>
             <div className="rbac-modal-actions">
               <button type="button" className="btn-secondary" onClick={() => setSelectedId("")}>Cancel</button>
-              <button className="btn">Save routing</button>
+              <button className="btn" disabled={Boolean(actionBusy)} aria-busy={actionBusy === "routing"}>{actionBusy === "routing" ? "Saving routing…" : "Save routing"}</button>
             </div>
           </form>
         </div>

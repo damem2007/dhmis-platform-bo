@@ -16,7 +16,7 @@ export function SupportPage({ model }: { model: PlatformPageModel }) {
     filteredOnboardingOrganizations, onboardingOrganizations, onboardingPageSize, onboardingPages,
     currentOnboardingPage, setOnboardingPage, supportScope, setSupportScope, integrationApprovals,
     currentIntegrationRequestPage, integrationRequestPages, integrationRequestPageSize,
-    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration,
+    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration, actionBusy,
   } = model;
   return (<>
 {page === "support" && (
@@ -58,8 +58,8 @@ export function SupportPage({ model }: { model: PlatformPageModel }) {
           required
         />
       </Field>
-      <button className="btn" disabled={!selectedId}>
-        Send one-time reset link
+      <button className="btn" disabled={!selectedId || Boolean(actionBusy)} aria-busy={actionBusy === "recovery"}>
+        {actionBusy === "recovery" ? "Sending reset link…" : "Send one-time reset link"}
       </button>
       </div>
     </form>

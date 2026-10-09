@@ -16,7 +16,7 @@ export function SettingsIntegrationsPage({ model }: { model: PlatformPageModel }
     filteredOnboardingOrganizations, onboardingOrganizations, onboardingPageSize, onboardingPages,
     currentOnboardingPage, setOnboardingPage, supportScope, setSupportScope, integrationApprovals,
     currentIntegrationRequestPage, integrationRequestPages, integrationRequestPageSize,
-    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration,
+    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration, actionBusy,
   } = model;
   return (<>
 {page === "settings-integrations" && (
@@ -115,16 +115,20 @@ export function SettingsIntegrationsPage({ model }: { model: PlatformPageModel }
                   <div className="mt-2 flex gap-2">
                     <button
                       className="btn"
+                      disabled={Boolean(actionBusy)}
+                      aria-busy={actionBusy === "integration"}
                       name="decision"
                       value="approved"
                     >
-                      {integrationApprovals[request.id]
+                      {actionBusy === "integration" ? "Saving decision…" : integrationApprovals[request.id]
                         ? "Execute approved activation"
                         : "Submit approval"}
                     </button>
                     {!integrationApprovals[request.id] && (
                       <button
                         className="btn-secondary"
+                        disabled={Boolean(actionBusy)}
+                        aria-busy={actionBusy === "integration"}
                         name="decision"
                         value="rejected"
                       >

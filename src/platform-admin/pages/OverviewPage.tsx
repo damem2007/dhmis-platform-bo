@@ -16,7 +16,7 @@ export function OverviewPage({ model }: { model: PlatformPageModel }) {
     filteredOnboardingOrganizations, onboardingOrganizations, onboardingPageSize, onboardingPages,
     currentOnboardingPage, setOnboardingPage, supportScope, setSupportScope, integrationApprovals,
     currentIntegrationRequestPage, integrationRequestPages, integrationRequestPageSize,
-    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration,
+    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration, actionBusy,
   } = model;
   return (<>
 {page === "overview" && (
@@ -129,7 +129,7 @@ export function OverviewPage({ model }: { model: PlatformPageModel }) {
               <input className="field" name="reason" minLength={10} placeholder="Owner locked out, verified by phone" required />
             </Field>
             <input type="hidden" name="action" value="password_reset" />
-            <button className="btn" disabled={!selectedId}>Send one-time reset link</button>
+            <button className="btn" disabled={!selectedId || Boolean(actionBusy)} aria-busy={actionBusy === "recovery"}>{actionBusy === "recovery" ? "Sending reset link…" : "Send one-time reset link"}</button>
           </form>
         </div>
       </section>

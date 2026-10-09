@@ -54,6 +54,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
       : { type: "login" };
   });
   const [notice, setNotice] = useState<Notice|null>(null);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState("");
   const [tenantSearch, setTenantSearch] = useState("");
   const [tenantStatusFilter, setTenantStatusFilter] = useState("all");
@@ -305,6 +306,8 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
 
   async function provision(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (actionBusy) return;
+    setActionBusy("provision");
     const form = new FormData(event.currentTarget);
     try {
       const result = await api<{
@@ -333,17 +336,21 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
         message: reason instanceof Error ? reason.message : "Provisioning failed",
         state:"ready"
     });
+    } finally {
+      setActionBusy(null);
     }
   }
 
   async function configureRouting(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (actionBusy) return;
     if (state.type !== "ready") return;
     const form = new FormData(event.currentTarget);
     const organization = state.organizations.find(
       (item) => item.id === selectedId,
     );
     if (!organization) return;
+    setActionBusy("routing");
     const domains = String(form.get("domains") || "")
       .split("\n")
       .map((line) => line.trim())
@@ -373,12 +380,16 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
         message:reason instanceof Error ? reason.message : "Routing update failed",
         state: "ready"
     });
+    } finally {
+      setActionBusy(null);
     }
   }
 
   async function recoverAdministrator(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (actionBusy) return;
     if (!selectedId) return;
+    setActionBusy("recovery");
     const form = new FormData(event.currentTarget);
     try {
       await api(`/platform/organizations/${selectedId}/recovery`, {
@@ -391,6 +402,8 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
       setNotice({
         message: reason instanceof Error ? reason.message : "Recovery action failed",
       state: "ready"});
+    } finally {
+      setActionBusy(null);
     }
   }
 
@@ -399,6 +412,8 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     requestId: string,
   ) {
     event.preventDefault();
+    if (actionBusy) return;
+    setActionBusy("integration");
     const form = new FormData(event.currentTarget);
     const submitter = (event.nativeEvent as SubmitEvent)
       .submitter as HTMLButtonElement | null;
@@ -423,6 +438,8 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
       await load();
     } catch (reason) {
       setNotice({message: reason instanceof Error ? reason.message : "Decision failed", state: "ready"});
+    } finally {
+      setActionBusy(null);
     }
   }
 
@@ -696,7 +713,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     filteredOnboardingOrganizations, onboardingOrganizations, onboardingPageSize, onboardingPages,
     currentOnboardingPage, setOnboardingPage, supportScope, setSupportScope, integrationApprovals,
     currentIntegrationRequestPage, integrationRequestPages, integrationRequestPageSize,
-    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration,
+    pagedIntegrationRequests, setIntegrationRequestPage, decideIntegration, actionBusy,
   };
 
   return (

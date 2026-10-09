@@ -58,6 +58,27 @@
   --font-display: "Fraunces", Georgia, serif;
 }
 
+/* Platform-admin prototype tokens are scoped to the shell root. Keeping a
+   separate namespace prevents the platform shell from changing the legacy
+   project-only pages that still use the shared brand tokens above. */
+.platform-admin {
+  --pa-bg: #f4f6f5;
+  --pa-sf: #fff;
+  --pa-sf2: #eef2f0;
+  --pa-bd: #dbe3df;
+  --pa-tx: #111a16;
+  --pa-mu: #54655d;
+  --pa-ac: #0b8a55;
+  --pa-ac2: #d3f1e2;
+  --pa-on: #fff;
+  --pa-wn: #8a4b00;
+  --pa-wn2: #fdebc8;
+  --pa-er: #b42318;
+  --pa-er2: #fde3e0;
+  --pa-in: #1d4ed8;
+  --pa-in2: #dfe8fd;
+}
+
 [data-theme="dark"] {
   --ink: #eef2f0;
   --ink-muted: #a9b6b0;
@@ -85,4 +106,22 @@
   --success-tint: #113a2a;
 
   --accent-glow: rgba(52, 211, 143, 0.16);
+}
+
+[data-theme="dark"] .platform-admin {
+  --pa-bg: #0d1512;
+  --pa-sf: #131d19;
+  --pa-sf2: #1a2621;
+  --pa-bd: #25342d;
+  --pa-tx: #e8f0ec;
+  --pa-mu: #95a89e;
+  --pa-ac: #34d399;
+  --pa-ac2: #12382a;
+  --pa-on: #04160e;
+  --pa-wn: #fbbf24;
+  --pa-wn2: #3a2b0c;
+  --pa-er: #f87171;
+  --pa-er2: #3d1b19;
+  --pa-in: #93b4ff;
+  --pa-in2: #1b2a52;
 }

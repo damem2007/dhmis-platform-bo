@@ -388,6 +388,23 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     }
   }
 
+  async function activateTenant(organizationId: string) {
+    if (actionBusy) return;
+    setActionBusy(`activate:${organizationId}`);
+    try {
+      await api(`/platform/organizations/${organizationId}/activate`, {}, "POST");
+      setNotice({ message: "Tenant activated and available for routing.", state: "ready" });
+      await load();
+    } catch (reason) {
+      setNotice({
+        message: reason instanceof Error ? reason.message : "Tenant activation failed",
+        state: "ready",
+      });
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
   async function recoverAdministrator(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (actionBusy) return;
@@ -703,7 +720,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     "settings-roles",
   ].includes(page);
   const pageModel: PlatformPageModel = {
-    page, meta, state, load, selected, selectedId, setSelectedId, configureRouting,
+    page, meta, state, load, selected, selectedId, setSelectedId, configureRouting, activateTenant,
     recoverAdministrator, provision, tenantSearch, setTenantSearch, tenantStatusFilter,
     setTenantStatusFilter, tenantPlanFilter, setTenantPlanFilter, filteredOrganizations,
     tenantTotal, tenantPage, setTenantPage, tenantPageSize, setTenantPageSize, overviewDateRange, setOverviewDateRange, overviewStatusFilter,

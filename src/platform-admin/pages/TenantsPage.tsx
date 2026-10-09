@@ -3,7 +3,7 @@ import type { PlatformPageModel } from "../types";
 
 export function TenantsPage({ model }: { model: PlatformPageModel }) {
   const {
-    page, meta, state, load, selected, selectedId, setSelectedId, configureRouting,
+    page, meta, state, load, selected, selectedId, setSelectedId, configureRouting, activateTenant,
     recoverAdministrator, provision, tenantSearch, setTenantSearch, tenantStatusFilter,
     setTenantStatusFilter, tenantPlanFilter, setTenantPlanFilter, filteredOrganizations,
     tenantTotal, tenantPage, setTenantPage, tenantPageSize, setTenantPageSize, overviewDateRange, setOverviewDateRange, overviewStatusFilter,
@@ -68,12 +68,26 @@ export function TenantsPage({ model }: { model: PlatformPageModel }) {
                   .join(" · ")}
               </td>
               <td>
-                <button
-                  className="btn-secondary"
-                  onClick={() => setSelectedId(organization.id)}
-                >
-                  Manage
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  {organization.status === "migrated" && (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={Boolean(actionBusy)}
+                      aria-busy={actionBusy === `activate:${organization.id}`}
+                      onClick={() => void activateTenant(organization.id)}
+                    >
+                      {actionBusy === `activate:${organization.id}` ? "Activating…" : "Activate"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setSelectedId(organization.id)}
+                  >
+                    Manage
+                  </button>
+                </div>
               </td>
             </tr>
           ))}

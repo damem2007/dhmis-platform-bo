@@ -45,6 +45,7 @@ export type PlatformPageModel = {
   selectedId: string;
   setSelectedId: Dispatch<SetStateAction<string>>;
   configureRouting: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  activateTenant: (organizationId: string) => Promise<void>;
   recoverAdministrator: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   provision: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onboardingTarget: Organization | null;

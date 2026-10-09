@@ -40,7 +40,7 @@ export type PlatformPageModel = {
   page: PlatformPage;
   meta: { title: string; description: string };
   state: Extract<AdminState, { type: "ready" }>;
-  load: (page?: number) => Promise<void>;
+  load: (page?: number, pageSize?: number) => Promise<void>;
   selected?: Organization;
   selectedId: string;
   setSelectedId: Dispatch<SetStateAction<string>>;
@@ -57,6 +57,8 @@ export type PlatformPageModel = {
   tenantTotal: number;
   tenantPage: number;
   setTenantPage: Dispatch<SetStateAction<number>>;
+  tenantPageSize: number;
+  setTenantPageSize: Dispatch<SetStateAction<number>>;
   overviewDateRange: string;
   setOverviewDateRange: Dispatch<SetStateAction<string>>;
   overviewStatusFilter: string;

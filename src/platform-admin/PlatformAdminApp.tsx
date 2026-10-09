@@ -64,6 +64,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const [overviewRowsPerPage, setOverviewRowsPerPage] = useState(10);
   const [overviewTablePage, setOverviewTablePage] = useState(1);
   const [tenantPage, setTenantPage] = useState(1);
+  const [tenantPageSize, setTenantPageSize] = useState(10);
   const [tenantTotal, setTenantTotal] = useState(0);
   const [approvalFeed, setApprovalFeed] = useState<ApprovalNotificationFeed>({ items: [], unread_count: 0 });
   const [integrationApprovals, setIntegrationApprovals] = useState<Record<string, string>>({});
@@ -127,13 +128,13 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const initials = nameInitials(providerName);
 
 //header helper
-  async function load(requestedPage = tenantPage) {
+  async function load(requestedPage = tenantPage, requestedPageSize = tenantPageSize) {
     setState({ type: "loading" });
     try {
       const [organizationResult, adapterDefaults, integrationRequests, integrationStatus, regions, approvals] =
         await Promise.all([
           page === "tenants"
-            ? api<OrganizationPage>(`/platform/organizations/query?page=${requestedPage}&page_size=25&search=${encodeURIComponent(tenantSearch)}${tenantStatusFilter !== "all" ? `&status=${encodeURIComponent(tenantStatusFilter)}` : ""}${tenantPlanFilter !== "all" ? `&plan=${encodeURIComponent(tenantPlanFilter)}` : ""}`)
+            ? api<OrganizationPage>(`/platform/organizations/query?page=${requestedPage}&page_size=${requestedPageSize}&search=${encodeURIComponent(tenantSearch)}${tenantStatusFilter !== "all" ? `&status=${encodeURIComponent(tenantStatusFilter)}` : ""}${tenantPlanFilter !== "all" ? `&plan=${encodeURIComponent(tenantPlanFilter)}` : ""}`)
             : api<Organization[]>("/platform/organizations"),
           api<AdapterDefault[]>("/platform/adapter-defaults"),
           api<IntegrationRequest[]>("/platform/integration-requests"),
@@ -152,6 +153,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
       });
       if (!Array.isArray(organizationResult)) {
         setTenantPage(organizationResult.page);
+        setTenantPageSize(organizationResult.page_size);
         setTenantTotal(organizationResult.total);
       }
     } catch (reason) {
@@ -684,7 +686,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     page, meta, state, load, selected, selectedId, setSelectedId, configureRouting,
     recoverAdministrator, provision, tenantSearch, setTenantSearch, tenantStatusFilter,
     setTenantStatusFilter, tenantPlanFilter, setTenantPlanFilter, filteredOrganizations,
-    tenantTotal, tenantPage, setTenantPage, overviewDateRange, setOverviewDateRange, overviewStatusFilter,
+    tenantTotal, tenantPage, setTenantPage, tenantPageSize, setTenantPageSize, overviewDateRange, setOverviewDateRange, overviewStatusFilter,
     setOverviewStatusFilter, overviewPlanFilter, setOverviewPlanFilter, overviewRowsPerPage,
     setOverviewRowsPerPage, overviewTablePage, setOverviewTablePage, overviewStatusOptions,
     overviewPlanOptions, overviewOrganizations, overviewPageOrganizations, overviewPage,

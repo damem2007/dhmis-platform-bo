@@ -6,7 +6,7 @@ export function TenantsPage({ model }: { model: PlatformPageModel }) {
     page, meta, state, load, selected, selectedId, setSelectedId, configureRouting,
     recoverAdministrator, provision, tenantSearch, setTenantSearch, tenantStatusFilter,
     setTenantStatusFilter, tenantPlanFilter, setTenantPlanFilter, filteredOrganizations,
-    tenantTotal, tenantPage, setTenantPage, overviewDateRange, setOverviewDateRange, overviewStatusFilter,
+    tenantTotal, tenantPage, setTenantPage, tenantPageSize, setTenantPageSize, overviewDateRange, setOverviewDateRange, overviewStatusFilter,
     setOverviewStatusFilter, overviewPlanFilter, setOverviewPlanFilter, overviewRowsPerPage,
     setOverviewRowsPerPage, overviewTablePage, setOverviewTablePage, overviewStatusOptions,
     overviewPlanOptions, overviewOrganizations, overviewPageOrganizations, overviewPage,
@@ -80,10 +80,8 @@ export function TenantsPage({ model }: { model: PlatformPageModel }) {
         </tbody>
       </table>
       <div className="prototype-pagination">
-        <span>
-          {tenantTotal ? (tenantPage - 1) * 25 + 1 : 0}–
-          {Math.min(tenantTotal, tenantPage * 25)} of {tenantTotal}
-        </span>
+        <span>{tenantTotal ? (tenantPage - 1) * tenantPageSize + 1 : 0}–{Math.min(tenantTotal, tenantPage * tenantPageSize)} of {tenantTotal}</span>
+        <label className="label">Rows per page<select className="field" value={tenantPageSize} onChange={(event) => { const nextSize = Number(event.target.value); setTenantPageSize(nextSize); setTenantPage(1); void load(1, nextSize); }}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>
         <button
           className="btn-secondary"
           disabled={tenantPage === 1}
@@ -93,7 +91,7 @@ export function TenantsPage({ model }: { model: PlatformPageModel }) {
         </button>
         <button
           className="btn-secondary"
-          disabled={tenantPage * 25 >= tenantTotal}
+          disabled={tenantPage * tenantPageSize >= tenantTotal}
           onClick={() => void load(tenantPage + 1)}
         >
           Next

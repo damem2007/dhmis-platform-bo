@@ -744,6 +744,8 @@ img.fo-avatar { object-fit:cover; }
 .rbac-approval-head { display:flex; justify-content:space-between; gap:20px; }
 .rbac-approval-badges { display:flex; gap:6px; align-items:flex-start; white-space:nowrap; }
 .rbac-approval-card > p { margin:14px 0 0; }
+.rbac-request-details { margin:10px 0 0; padding-left:22px; color:var(--ink); }
+.rbac-request-details li { margin:4px 0; }
 .rbac-comment { width:min(560px,100%); margin-top:16px; }
 .rbac-approval-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
 .rbac-approval-hint { color:#8a4b00!important; font-size:13px; }

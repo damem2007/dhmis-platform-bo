@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../lib/api";
 import { RolesAccess } from "../components/RolesAccess";
 import { LoadingOverlay } from "../components/LoadingOverlay";
+import { PlatformNotificationCenter } from "./PlatformNotificationCenter";
 import type { PlatformPage } from "../pageRegistry";
 
 type PrototypePage = Exclude<PlatformPage, "overview" | "tenants" | "onboarding" | "support" | "settings-integrations">;
@@ -209,11 +210,13 @@ type Access = {
   name: string;
   email: string;
   role: string;
+  role_id?: string;
   status: string;
   mfa_enabled: boolean;
   created_at?: string;
   expires?: number | null;
 };
+type PlatformRoleOption = { id: string; name: string; status: string };
 
 function PlatformStaff() {
   const [data, setData] = useState<Page<Access>>({ page: 1, page_size: 25, total: 0, items: [] });
@@ -221,14 +224,25 @@ function PlatformStaff() {
   const [resetUser, setResetUser] = useState<Access | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
-  const load = async (page = 1) => setData(await api<Page<Access>>(`/platform/access/query?page=${page}&page_size=25&search=${encodeURIComponent(search)}${status === "all" ? "" : `&status=${status}`}`));
-  useEffect(() => { void load().catch((e) => setMessage(e instanceof Error ? e.message : "Access could not be loaded")); }, []);
+  const [roles, setRoles] = useState<PlatformRoleOption[]>([]);
+  const [selectedRole, setSelectedRole] = useState("platform-super-admin");
+  const [roleFilter] = useState(() => new URLSearchParams(window.location.search).get("role") || "");
+  const load = async (page = 1) => setData(await api<Page<Access>>(`/platform/access/query?page=${page}&page_size=25&search=${encodeURIComponent(search)}${status === "all" ? "" : `&status=${status}`}${roleFilter ? `&role=${encodeURIComponent(roleFilter)}` : ""}`));
+  useEffect(() => {
+    void Promise.all([
+      load(),
+      api<{ items: PlatformRoleOption[] }>("/platform/rbac/roles?page=1&size=50&status=published").then((result) => {
+        setRoles(result.items || []);
+        if (result.items?.length && !result.items.some((role) => role.id === selectedRole)) setSelectedRole(result.items[0].id);
+      }),
+    ]).catch((e) => setMessage(e instanceof Error ? e.message : "Access could not be loaded"));
+  }, []);
 
   async function invite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     try {
-      await api("/platform/invites", { name: form.get("name"), email: form.get("email"), role: "platform_admin" });
+      await api("/platform/invites", { name: form.get("name"), email: form.get("email"), role: selectedRole });
       setMessage("Invitation queued for provider delivery.");
       event.currentTarget.reset();
       await load();
@@ -278,7 +292,7 @@ function PlatformStaff() {
       <form className="prototype-controls" onSubmit={invite}>
         <label className="label">Name<input className="field" name="name" required /></label>
         <label className="label">Email<input className="field" name="email" type="email" required /></label>
-        <label className="label">Role<select className="field" name="role" disabled><option>Platform administrator</option></select></label>
+        <label className="label">Role<select className="field" name="role" value={selectedRole} onChange={(event) => setSelectedRole(event.target.value)} required>{roles.length ? roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>) : <option value="platform-super-admin">Platform Super Admin</option>}</select></label>
         <label className="label">Locations<select className="field" name="locations" disabled><option>Platform</option></select></label>
         <button className="btn self-end">Send invitation</button>
       </form>
@@ -290,7 +304,7 @@ function PlatformStaff() {
       <div className="flex gap-2"><button className="btn">Send password-reset email</button><button className="btn-secondary" type="button" onClick={() => setResetUser(null)}>Cancel</button></div>
     </form>}
     <section className="platform-card overflow-auto">
-      <div className="platform-card-header"><h2>Invitations &amp; access</h2><FilterBar onSubmit={(event) => { event.preventDefault(); void load(1); }}><input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search staff…" aria-label="Search staff" /><select className="field" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Status filter"><option value="all">All statuses</option><option value="pending">Pending</option><option value="active">Active</option><option value="expired">Expired</option><option value="revoked">Revoked</option><option value="disabled">Disabled</option></select><button className="btn-secondary">Filter</button></FilterBar></div>
+      <div className="platform-card-header"><div><h2>Invitations &amp; access</h2>{roleFilter && <p className="muted text-sm">Showing users assigned to role: {roleFilter}</p>}</div><FilterBar onSubmit={(event) => { event.preventDefault(); void load(1); }}><input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search staff…" aria-label="Search staff" /><select className="field" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Status filter"><option value="all">All statuses</option><option value="pending">Pending</option><option value="active">Active</option><option value="expired">Expired</option><option value="revoked">Revoked</option><option value="disabled">Disabled</option></select><button className="btn-secondary">Filter</button></FilterBar></div>
       <table><thead><tr><th>Staff</th><th>Role</th><th>Locations</th><th>Status</th><th>Sent</th><th>Expires</th><th>Actions</th></tr></thead>
       <tbody>{data.items.map((row) => <tr key={`${row.kind}-${row.id}`}><td><strong>{row.name}</strong><div className="muted text-xs">{row.email}</div></td><td>{row.role.replaceAll("_", " ")}</td><td>Platform</td><td><Badge tone={row.status === "active" ? "good" : row.status === "pending" ? "info" : row.status === "expired" || row.status === "revoked" ? "danger" : "neutral"}>{row.status}</Badge></td><td>{row.created_at ? new Date(row.created_at).toLocaleDateString() : "—"}</td><td>{row.expires ? new Date(row.expires * 1000).toLocaleDateString() : "—"}</td><td>{row.kind === "user" ? <div className="flex flex-wrap gap-2"><button className="btn-secondary" onClick={() => void toggleUser(row)}>{row.status === "active" ? "Disable" : "Enable"}</button>{row.status === "active" && <button className="btn-secondary" onClick={() => setResetUser(row)}>Send password reset</button>}</div> : <>{["pending", "expired"].includes(row.status) && <button className="btn-secondary" onClick={() => void invitationAction(row, "resend")}>Resend</button>} {row.status === "pending" && <button className="btn-secondary" onClick={() => void invitationAction(row, "revoke")}>Revoke</button>}</>}</td></tr>)}</tbody></table>
       <Pager data={data} load={(page) => void load(page)} />
@@ -317,6 +331,6 @@ function Templates() {
   return <><ErrorMessage message={message} /><div className="prototype-template-layout"><aside className="panel prototype-template-list">{Object.entries(items).map(([templateKey, template]) => <button key={templateKey} aria-current={templateKey === key ? 'page' : undefined} onClick={() => setKey(templateKey)}><strong>{template.name}</strong><span>{template.channel} · {template.active ? 'Active' : 'Inactive'}</span></button>)}</aside><section className="panel"><div className="prototype-form-grid"><label className="label">Channel<select className="field" value={item.channel} onChange={(event) => update({ channel: event.target.value })}><option value="email">Email</option><option value="sms">SMS</option></select></label><label className="label">Subject<input className="field" value={item.subject} onChange={(event) => update({ subject: event.target.value })} /></label><label className="label">State<select className="field" value={item.active ? 'active' : 'inactive'} onChange={(event) => update({ active: event.target.value === 'active' })}><option value="active">Active</option><option value="inactive">Inactive</option></select></label></div><label className="label">Message<textarea className="field min-h-40" value={item.body} onChange={(event) => update({ body: event.target.value })} /></label><div className="prototype-token-row">{templateVariables.map((variable) => <button type="button" key={variable} onClick={() => update({ body: `${item.body}${item.body.endsWith(' ') || !item.body ? '' : ' '}{{${variable}}}` })}>{`{{${variable}}}`}</button>)}</div><h2 className="mt-5 font-semibold">Preview</h2><div className="prototype-email-preview"><strong>{renderTemplateSample(item.subject)}</strong><p className="whitespace-pre-wrap">{renderTemplateSample(item.body)}</p></div><button className="btn mt-4" onClick={() => void save()}>Save template</button></section></div></>;
 }
 
-function Roles() { return <RolesAccess domain="platform" />; }
+function Roles() { return <RolesAccess domain="platform" staffHref="/admin/settings/staff/" />; }
 
-export function PlatformPrototypePage({ page }: { page: PrototypePage }) { switch (page) { case "billing-plans": return <Billing />; case "jobs": return <Jobs />; case "incidents": return <Incidents />; case "platform-audit": return <Audit showHeader={false} />; case "settings-audit": return <Audit />; case "feature-flags": return <Flags />; case "settings-practice": return <Practice />; case "settings-staff": return <PlatformStaff />; case "settings-templates": return <Templates />; case "settings-roles": return <Roles />; } }
+export function PlatformPrototypePage({ page }: { page: PrototypePage }) { switch (page) { case "billing-plans": return <Billing />; case "jobs": return <Jobs />; case "incidents": return <Incidents />; case "platform-audit": return <Audit showHeader={false} />; case "settings-audit": return <Audit />; case "feature-flags": return <Flags />; case "settings-practice": return <Practice />; case "settings-staff": return <PlatformStaff />; case "settings-templates": return <Templates />; case "settings-roles": return <Roles />; case "settings-notifications": return <PlatformNotificationCenter />; } }

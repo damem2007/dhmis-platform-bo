@@ -13,7 +13,8 @@ export type PlatformPage =
   | "settings-staff"
   | "settings-templates"
   | "settings-audit"
-  | "settings-roles";
+  | "settings-roles"
+  | "settings-notifications";
 
 export const PLATFORM_PAGE_TITLES: Record<PlatformPage, string> = {
   overview: 'DHMIS · Platform Overview',
@@ -31,6 +32,7 @@ export const PLATFORM_PAGE_TITLES: Record<PlatformPage, string> = {
   'settings-templates': 'DHMIS · Message Templates',
   'settings-audit': 'DHMIS · Audit Trail',
   'settings-roles': 'DHMIS · Roles & Access',
+  'settings-notifications': 'DHMIS · Notifications',
 };
 
 export const PLATFORM_PAGE_META: Record<PlatformPage, { title: string; description: string }> = {
@@ -49,6 +51,7 @@ export const PLATFORM_PAGE_META: Record<PlatformPage, { title: string; descripti
   'settings-templates': { title: 'Message templates', description: 'Platform-owned operational communication templates.' },
   'settings-audit': { title: 'Audit trail', description: 'Auditable platform configuration changes.' },
   'settings-roles': { title: 'Roles & access', description: 'Platform authorization roles and maker-checker policy.' },
+  'settings-notifications': { title: 'Notifications', description: 'Review platform notifications, approvals and operational updates.' },
 };
 
 export const PLATFORM_SETTINGS_NAV: Array<[PlatformPage, string, string]> = [
@@ -58,9 +61,10 @@ export const PLATFORM_SETTINGS_NAV: Array<[PlatformPage, string, string]> = [
   ['settings-templates', 'Message templates', '/admin/settings/templates/'],
   ['settings-audit', 'Audit trail', '/admin/settings/audit/'],
   ['settings-roles', 'Roles & access', '/admin/settings/roles/'],
+  ['settings-notifications', 'Notifications', '/admin/settings/notifications/'],
 ];
 
 export const PLATFORM_PROTOTYPE_PAGES: Exclude<PlatformPage, 'overview' | 'tenants' | 'onboarding' | 'support' | 'settings-integrations'>[] = [
   'billing-plans', 'jobs', 'incidents', 'platform-audit', 'feature-flags',
-  'settings-practice', 'settings-staff', 'settings-templates', 'settings-audit', 'settings-roles',
+  'settings-practice', 'settings-staff', 'settings-templates', 'settings-audit', 'settings-roles', 'settings-notifications',
 ];

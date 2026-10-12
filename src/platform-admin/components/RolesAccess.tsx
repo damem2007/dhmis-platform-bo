@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
 
 type Domain = 'tenant' | 'platform';
@@ -101,7 +101,7 @@ function setResourceLevelDraft(current: Record<string, Grant>, resource: Resourc
   return next;
 }
 
-export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
+export function RolesAccess({ domain: initialDomain, staffHref = '/admin/settings/staff/' }: { domain: Domain; staffHref?: string }) {
   const [activeDomain, setActiveDomain] = useState<Domain>(initialDomain);
   const domain = activeDomain;
   const prefix = domain === 'platform' ? '/platform/rbac' : '/rbac';
@@ -128,6 +128,7 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
   const [selectedId, setSelectedId] = useState('');
   const [draftGrants, setDraftGrants] = useState<Record<string, Grant>>({});
   const [search, setSearch] = useState('');
+  const permissionRequest = useRef(0);
   const [permissionFilter, setPermissionFilter] = useState<'all' | 'granted' | 'high' | 'fourEyes' | 'changed'>('all');
   const [permissionPage, setPermissionPage] = useState(1);
   const [message, setMessage] = useState('');
@@ -162,9 +163,15 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
     setDraftGrants(Object.fromEntries((next?.grants || []).map((grant) => [grant.permission_key, grant])));
   }
   async function loadPermissions(page = permissionPage) {
+    const requestId = ++permissionRequest.current;
     const query = new URLSearchParams({ domain, page: String(page), size: '50' });
     if (search) query.set('search', search);
-    setPermissions(await api<Page<Permission>>(`${prefix}/permissions?${query}`));
+    const result = await api<Page<Permission>>(`${prefix}/permissions?${query}`);
+    // Refreshes and search submissions can overlap. Only the latest request
+    // may replace the visible page, otherwise an older empty response can
+    // hide a valid search result that has already returned from the API.
+    if (requestId !== permissionRequest.current) return;
+    setPermissions(result);
     setPermissionPage(page);
   }
   async function loadPermissionRows(filters: Record<string, string>) {
@@ -217,8 +224,17 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
   }, [tab, prefix]);
   useEffect(() => {
     if (!selected) return;
+    if (selected.locked) {
+      setDraftGrants(Object.fromEntries(catalogue.map((permission) => [permission.key, {
+        permission_key: permission.key,
+        effect: 'allow' as const,
+        scope: permission.valid_scopes[0] || (domain === 'platform' ? 'Platform' : 'Organization'),
+        conditions: {},
+      }])));
+      return;
+    }
     setDraftGrants(Object.fromEntries(selected.grants.map((grant) => [grant.permission_key, grant])));
-  }, [selectedId, roles.items]);
+  }, [catalogue, domain, selectedId, roles.items]);
   useEffect(() => {
     if (!newRoleOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setNewRoleOpen(false); };
@@ -409,7 +425,7 @@ export function RolesAccess({ domain: initialDomain }: { domain: Domain }) {
             <button type="button" aria-pressed={domain === 'tenant'} disabled={initialDomain !== 'tenant'} onClick={() => switchDomain('tenant')}>Tenant</button>
             <button type="button" aria-pressed={domain === 'platform'} disabled={initialDomain !== 'platform'} onClick={() => switchDomain('platform')}>Platform</button>
           </div>
-          {roles.items.map((role) => <button type="button" key={role.id} aria-current={selected?.id === role.id ? 'page' : undefined} onClick={() => setSelectedId(role.id)}><strong>{role.name}{role.locked ? ' 🔒' : ''}</strong><span>{role.user_count} users · {role.permission_count} permissions{role.parent_id ? ' · inherited' : ''}</span></button>)}
+          {roles.items.map((role) => <div className={`rbac-role-item ${selected?.id === role.id ? 'is-selected' : ''}`} key={role.id}><button className="rbac-role-select" type="button" aria-current={selected?.id === role.id ? 'page' : undefined} onClick={() => setSelectedId(role.id)}><strong>{role.name}{role.locked ? ' 🔒' : ''}</strong></button><div className="rbac-role-meta"><span>{role.permission_count} permissions{role.parent_id ? ' · inherited' : ''}</span><a className="rbac-role-users" aria-label={`View ${role.user_count} users assigned to ${role.name}`} href={`${staffHref}?role=${encodeURIComponent(role.id)}`}>{role.user_count} users</a></div></div>)}
         </aside>
         <section className="panel min-w-0 rbac-role-card">
           <div className="prototype-section-head rbac-role-card-header"><div><h2>{selected?.name || 'No role selected'}</h2><p>{selected?.description || 'Create a role to configure access.'}</p></div>{selected && <div className="rbac-role-actions"><span className={`prototype-badge prototype-badge-${tone(selected.status)}`}>{selected.locked ? 'Locked · ' : ''}{selected.status}</span>{!selected.locked && selected.status === 'draft' && <button className="btn-secondary" type="button" onClick={() => void lifecycle('delete')}>Delete draft</button>}{!selected.locked && selected.status === 'published' && <><button className="btn-secondary" type="button" onClick={() => void lifecycle('deactivate')}>Deactivate</button><button className="btn-secondary" type="button" disabled={selected.user_count > 0} title={selected.user_count ? 'Reassign its users first' : ''} onClick={() => void lifecycle('archive')}>Archive</button></>}{!selected.locked && selected.status === 'inactive' && <><button className="btn-secondary" type="button" onClick={() => void lifecycle('reactivate')}>Reactivate</button><button className="btn-secondary" type="button" disabled={selected.user_count > 0} title={selected.user_count ? 'Reassign its users first' : ''} onClick={() => void lifecycle('archive')}>Archive</button></>}{!selected.locked && selected.status === 'archived' && <button className="btn-secondary" type="button" onClick={() => void lifecycle('restore')}>Restore</button>}</div>}</div>

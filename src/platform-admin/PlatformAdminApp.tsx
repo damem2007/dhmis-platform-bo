@@ -43,6 +43,7 @@ import type { AdapterDefault, AdminState, AccountView, Challenge, IntegrationReq
 export type { PlatformPage } from './pageRegistry';
 
 const platformSessionKey = "dhmis.platform.access-token";
+const platformSidebarKey = "dhmis.platform.sidebar-collapsed";
 
 export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const [state, setState] = useState<AdminState>(() => {
@@ -77,7 +78,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const [onboardingStageFilter, setOnboardingStageFilter] = useState("all");
   const [onboardingTarget, setOnboardingTarget] = useState<Organization | null>(null);
   const [supportScope, setSupportScope] = useState<"all" | "mine">("all");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem(platformSidebarKey) === "true");
   const [settingsOpen, setSettingsOpen] = useState(page.startsWith("settings-"));
   const [helpOpen, setHelpOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() => window.localStorage.getItem("dhmis.platform.theme") === "dark" ? "dark" : "light");
@@ -100,6 +101,9 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("dhmis.platform.theme", theme);
   }, [theme]);
+  useEffect(() => {
+    window.localStorage.setItem(platformSidebarKey, String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
   useEffect(() => {
     function dismiss(event: MouseEvent | KeyboardEvent) {
       if (event instanceof KeyboardEvent && event.key !== "Escape") return;
@@ -732,6 +736,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
     "settings-templates",
     "settings-audit",
     "settings-roles",
+    "settings-notifications",
   ].includes(page);
   const pageModel: PlatformPageModel = {
     page, meta, state, load, selected, selectedId, setSelectedId, configureRouting, activateTenant,
@@ -879,10 +884,11 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
 
       <div className="platform-layout lay">
         <aside
+          id="platform-admin-navigation"
           className="platform-sidebar side"
           aria-label="Platform administration"
         >
-          <button type="button" className="platform-sidebar-toggle" aria-label={sidebarCollapsed ? "Show navigation" : "Hide navigation"} title={sidebarCollapsed ? "Show navigation" : "Hide navigation"} onClick={() => setSidebarCollapsed((value) => !value)}>{sidebarCollapsed ? <PanelLeftOpen size={17} aria-hidden="true" /> : <PanelLeftClose size={17} aria-hidden="true" />}</button>
+          <button type="button" className="platform-sidebar-toggle" aria-controls="platform-admin-navigation" aria-expanded={!sidebarCollapsed} aria-label={sidebarCollapsed ? "Show navigation" : "Hide navigation"} title={sidebarCollapsed ? "Show navigation" : "Hide navigation"} onClick={() => setSidebarCollapsed((value) => !value)}>{sidebarCollapsed ? <PanelLeftOpen size={17} aria-hidden="true" /> : <PanelLeftClose size={17} aria-hidden="true" />}</button>
           <p>Platform</p>
           <a
             aria-current={page === "overview" ? "page" : undefined}
@@ -922,7 +928,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
           <a aria-current={page === "platform-audit" ? "page" : undefined} href="/admin/platform-audit/">Platform audit</a>
           <a aria-current={page === "feature-flags" ? "page" : undefined} href="/admin/feature-flags/">Feature flags</a>
           <p>Admin</p>
-          <div className="platform-settings-parent"><div className="platform-settings-link"><a aria-current={page.startsWith("settings-") ? "page" : undefined} href="/admin/settings/">Settings</a><button type="button" aria-label={settingsOpen ? "Collapse settings" : "Expand settings"} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}><ChevronDown size={15} aria-hidden="true" /></button></div></div>
+          <div className="platform-settings-parent"><div className="platform-settings-link"><button type="button" className="platform-settings-label" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}>Settings</button><button type="button" aria-label={settingsOpen ? "Collapse settings" : "Expand settings"} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}><ChevronDown size={15} aria-hidden="true" /></button></div></div>
           {(settingsOpen || page.startsWith("settings-")) && PLATFORM_SETTINGS_NAV.map(([key, label, href]) => (
             <a
               key={key}

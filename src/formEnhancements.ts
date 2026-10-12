@@ -1,6 +1,19 @@
 const LOADING_MS = 900;
+const MIN_VISIBLE_MS = 300;
 const loadingTimers = new Map<HTMLButtonElement, number>();
+const loadingStartedAt = new Map<HTMLButtonElement, number>();
 const loadingButtons = new Set<HTMLButtonElement>();
+
+function clearLoading(button: HTMLButtonElement) {
+  const timer = loadingTimers.get(button);
+  if (timer) window.clearTimeout(timer);
+  loadingTimers.delete(button);
+  button.dataset.loading = "false";
+  button.removeAttribute("aria-busy");
+  delete button.dataset.loadingRequestKey;
+  loadingStartedAt.delete(button);
+  loadingButtons.delete(button);
+}
 
 function addPasswordToggle(input: HTMLInputElement) {
   if (input.dataset.passwordToggleReady === "true") return;
@@ -31,11 +44,9 @@ function markLoading(button: HTMLButtonElement) {
   button.dataset.loading = "true";
   button.setAttribute("aria-busy", "true");
   loadingButtons.add(button);
+  loadingStartedAt.set(button, Date.now());
   loadingTimers.set(button, window.setTimeout(() => {
-    button.dataset.loading = "false";
-    button.removeAttribute("aria-busy");
-    loadingButtons.delete(button);
-    loadingTimers.delete(button);
+    clearLoading(button);
   }, LOADING_MS));
 }
 
@@ -53,10 +64,14 @@ function bindMutationLifecycle() {
     const requestKey = (event as CustomEvent<{ requestKey?: string }>).detail?.requestKey;
     if (!requestKey) return;
     document.querySelectorAll<HTMLButtonElement>(`button[data-loading-request-key="${CSS.escape(requestKey)}"]`).forEach((button) => {
-      button.dataset.loading = "false";
-      button.removeAttribute("aria-busy");
-      delete button.dataset.loadingRequestKey;
-      loadingButtons.delete(button);
+      const elapsed = Date.now() - (loadingStartedAt.get(button) || Date.now());
+      const finish = () => clearLoading(button);
+      if (elapsed < MIN_VISIBLE_MS) {
+        const timer = window.setTimeout(finish, MIN_VISIBLE_MS - elapsed);
+        loadingTimers.set(button, timer);
+      } else {
+        finish();
+      }
     });
   };
   window.addEventListener("dhmis:mutation-start", start);
@@ -73,7 +88,10 @@ export function installFormEnhancements(root: ParentNode = document) {
     root.querySelectorAll<HTMLInputElement>('input[type="password"]').forEach(addPasswordToggle);
     root.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
       if (button.dataset.loadingBound === "true") return;
-      if (button.dataset.passwordToggle === "true" || button.hasAttribute("aria-haspopup")) return;
+      if (
+        button.dataset.passwordToggle === "true"
+        || (button.hasAttribute("aria-haspopup") && !button.classList.contains("btn"))
+      ) return;
       button.dataset.loadingBound = "true";
       button.addEventListener("click", () => markLoading(button), { capture: true });
     });

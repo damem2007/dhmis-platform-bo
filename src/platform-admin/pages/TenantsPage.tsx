@@ -3,7 +3,7 @@ import { Field } from "../components/Fields";
 import { LocationAutocomplete } from "../components/LocationAutocomplete";
 import { api } from "../lib/api";
 import type { Organization, PlatformPageModel } from "../types";
-import { BrandLoader } from "../components/BrandLoader";
+import { LoadingOverlay } from "../components/LoadingOverlay";
 
 type TenantLocation = {
   id: string;
@@ -99,7 +99,7 @@ function TenantLocationsEditor({ organizationId, region }: { organizationId: str
     }
   }
 
-  if (loading) return <section className="tenant-locations-editor"><h3>Locations</h3><p className="muted"><BrandLoader size={36} /> Loading...</p></section>;
+  if (loading) return <LoadingOverlay label="Loading tenant locations" />;
   return (
     <section className="tenant-locations-editor">
       <div className="platform-card-header">

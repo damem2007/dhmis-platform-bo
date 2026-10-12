@@ -21,6 +21,7 @@ export default defineConfig({
         settingsTemplates: 'admin/settings/templates/index.html',
         settingsAudit: 'admin/settings/audit/index.html',
         settingsRoles: 'admin/settings/roles/index.html',
+        settingsNotifications: 'admin/settings/notifications/index.html',
         integrationsAlias: 'admin/integrations/index.html',
         recoveryAlias: 'admin/recovery/index.html',
       },

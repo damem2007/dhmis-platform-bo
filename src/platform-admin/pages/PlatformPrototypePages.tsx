@@ -26,12 +26,77 @@ type Financial = {
   paid_cents: number;
   open_invoices: number;
 };
+type Plan = { id: string; code: string; name: string; description: string; price_cents: number; currency: string; interval: string; trial_days: number; max_locations: number | null; features: string[]; active: boolean };
+type PlanDraft = Omit<Plan, "id">;
+type SubscriptionRow = { organization_id: string; organization_name: string; slug: string; account_status: string; legacy_plan_code: string; subscription_status: string; subscription: { id: string; plan: Plan | null; trial_ends_at: string | null; current_period_start: string | null; current_period_end: string | null; cancel_at_period_end: boolean; external_reference: string } | null };
+type SubscriptionPage = Page<SubscriptionRow>;
+
+const platformHomeUrl = (import.meta.env.VITE_PLATFORM_HOME_URL || "/").replace(/\/$/, "");
+const planMoney = (plan: Plan) => plan.price_cents === 0 ? "Custom" : new Intl.NumberFormat("en-CA", { style: "currency", currency: plan.currency }).format(plan.price_cents / 100);
+
 function Billing() {
-  const [data, setData] = useState<Page<Financial>>({ page: 1, page_size: 25, total: 0, items: [] }); const [search, setSearch] = useState(""); const [message, setMessage] = useState("");
-  async function load(page = 1) { try { setData(await api<Page<Financial>>(`/platform/financial-operations/query?page=${page}&page_size=25&search=${encodeURIComponent(search)}`)); } catch (e) { setMessage(e instanceof Error ? e.message : "Financial operations could not be loaded"); } }
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [data, setData] = useState<SubscriptionPage>({ page: 1, page_size: 25, total: 0, items: [] });
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, { plan_code: string; status: string }>>({});
+  const [planDraft, setPlanDraft] = useState<PlanDraft>({ code: "", name: "", description: "", price_cents: 0, currency: "CAD", interval: "month", trial_days: 14, max_locations: null, features: [], active: true });
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
+  const [planSaving, setPlanSaving] = useState(false);
+
+  async function load(page = 1) {
+    setLoading(true);
+    try {
+      const [nextPlans, nextData] = await Promise.all([
+        api<Plan[]>("/platform/billing/plans?include_inactive=true"),
+        api<SubscriptionPage>(`/platform/billing/subscriptions?page=${page}&page_size=25&search=${encodeURIComponent(search)}${status !== "all" ? `&status=${encodeURIComponent(status)}` : ""}`),
+      ]);
+      setPlans(nextPlans);
+      setData(nextData);
+      setDrafts(Object.fromEntries(nextData.items.map((row) => [row.organization_id, { plan_code: row.subscription?.plan?.code || nextPlans.find((plan) => plan.active)?.code || "", status: row.subscription_status === "not_configured" ? "trialing" : row.subscription_status }] )));
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Plans and subscriptions could not be loaded"); }
+    finally { setLoading(false); }
+  }
   useEffect(() => { void load(); }, []);
-  const sums = data.items.reduce((a, row) => ({ invoiced: a.invoiced + row.invoiced_cents, paid: a.paid + row.paid_cents, open: a.open + row.open_invoices }), { invoiced: 0, paid: 0, open: 0 });
-  return <><ErrorMessage message={message} /><section className="platform-kpis"><article><span>Tenant accounts</span><strong>{data.total}</strong><small>Commercial accounts</small></article><article><span>Invoiced on page</span><strong>${(sums.invoiced / 100).toLocaleString()}</strong><small>Financial Operations records</small></article><article><span>Paid on page</span><strong>${(sums.paid / 100).toLocaleString()}</strong><small>Recorded payments</small></article><article><span>Open invoices</span><strong>{sums.open}</strong><small>Across listed tenants</small></article></section><section className="panel overflow-auto"><div className="prototype-section-head"><div><h2>Tenant financial operations</h2><p>Commercial standing and privacy-safe tenant aggregates.</p></div><form className="prototype-filter-bar" onSubmit={(e) => { e.preventDefault(); void load(); }}><input className="field" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tenants…" /><button className="btn-secondary">Search</button></form></div><table><thead><tr><th>Tenant</th><th>Plan</th><th>Locations</th><th>Staff</th><th>Subscription</th><th>Invoiced</th><th>Paid</th><th>Open</th></tr></thead><tbody>{data.items.map((r) => <tr key={r.organization_id}><td><strong>{r.organization_name}</strong><div className="muted text-xs">/{r.slug}</div></td><td>{r.plan_code}</td><td>{r.locations}</td><td>{r.staff_seats}</td><td><Badge tone={r.subscription_status === "active" ? "good" : "warn"}>{r.subscription_status.replaceAll("_", " ")}</Badge></td><td>${(r.invoiced_cents / 100).toFixed(2)}</td><td>${(r.paid_cents / 100).toFixed(2)}</td><td>{r.open_invoices}</td></tr>)}</tbody></table>{!data.items.length && <p className="p-4 muted">No tenant financial accounts match this filter.</p>}<Pager data={data} load={(page) => void load(page)} /></section></>;
+  async function saveSubscription(organizationId: string) {
+    const draft = drafts[organizationId];
+    if (!draft?.plan_code) return;
+    setSaving(organizationId);
+    try { await api(`/platform/organizations/${organizationId}/subscription`, draft, "PUT"); setMessage("Subscription updated and tenant access synchronized."); await load(data.page); }
+    catch (e) { setMessage(e instanceof Error ? e.message : "Subscription could not be updated"); }
+    finally { setSaving(null); }
+  }
+  function editPlan(plan?: Plan) {
+    setEditingPlanId(plan?.id || null);
+    setPlanDraft(plan ? { code: plan.code, name: plan.name, description: plan.description, price_cents: plan.price_cents, currency: plan.currency, interval: plan.interval, trial_days: plan.trial_days, max_locations: plan.max_locations, features: plan.features, active: plan.active } : { code: "", name: "", description: "", price_cents: 0, currency: "CAD", interval: "month", trial_days: 14, max_locations: null, features: [], active: true });
+  }
+  async function savePlan(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPlanSaving(true);
+    try {
+      const payload = { ...planDraft, features: planDraft.features.filter(Boolean) };
+      await api<Plan>(editingPlanId ? `/platform/billing/plans/${editingPlanId}` : "/platform/billing/plans", payload, editingPlanId ? "PUT" : "POST");
+      setMessage(editingPlanId ? "Plan updated and published to Platform Home." : "Plan created and published to Platform Home.");
+      editPlan();
+      await load(data.page);
+    } catch (e) { setMessage(e instanceof Error ? e.message : "Plan could not be saved"); }
+    finally { setPlanSaving(false); }
+  }
+  const activePlans = plans.filter((plan) => plan.active);
+  const counts = data.items.reduce((all, row) => { all[row.subscription_status] = (all[row.subscription_status] || 0) + 1; return all; }, {} as Record<string, number>);
+  return <>
+    <PageHeader title="Billing & plans" description="Manage the plan catalogue and each tenant's subscription lifecycle.">
+      <a className="btn-secondary" href={`${platformHomeUrl}/#/pricing`} target="_blank" rel="noreferrer">View public plans ↗</a>
+    </PageHeader>
+    <ErrorMessage message={message} />
+    <section className="platform-kpis"><article><span>Active plans</span><strong>{activePlans.length}</strong><small>{plans.length} total catalogue records</small></article><article><span>Tenant subscriptions</span><strong>{data.total}</strong><small>Matching current filter</small></article><article><span>Active</span><strong>{counts.active || 0}</strong><small>Paying or enabled tenants on this page</small></article><article><span>Trialing</span><strong>{counts.trialing || 0}</strong><small>Within their trial period</small></article></section>
+    <section className="panel mb-5"><div className="prototype-section-head"><div><h2>{editingPlanId ? "Edit plan" : "Add a plan"}</h2><p>Feature entitlements and location limits are configurable here and are used by tenant subscriptions and the public pricing page.</p></div>{editingPlanId && <button type="button" className="btn-secondary" onClick={() => editPlan()}>Cancel edit</button>}</div><form className="prototype-form-grid" onSubmit={savePlan}><label className="label">Code<input className="field" required value={planDraft.code} onChange={(event) => setPlanDraft({ ...planDraft, code: event.target.value })} /></label><label className="label">Name<input className="field" required value={planDraft.name} onChange={(event) => setPlanDraft({ ...planDraft, name: event.target.value })} /></label><label className="label">Description<input className="field" value={planDraft.description} onChange={(event) => setPlanDraft({ ...planDraft, description: event.target.value })} /></label><label className="label">Price (cents)<input className="field" type="number" min="0" value={planDraft.price_cents} onChange={(event) => setPlanDraft({ ...planDraft, price_cents: Number(event.target.value) })} /></label><label className="label">Currency<input className="field" maxLength={3} value={planDraft.currency} onChange={(event) => setPlanDraft({ ...planDraft, currency: event.target.value.toUpperCase() })} /></label><label className="label">Interval<select className="field" value={planDraft.interval} onChange={(event) => setPlanDraft({ ...planDraft, interval: event.target.value })}><option value="month">Monthly</option><option value="year">Yearly</option><option value="one_time">One time</option></select></label><label className="label">Trial days<input className="field" type="number" min="0" max="365" value={planDraft.trial_days} onChange={(event) => setPlanDraft({ ...planDraft, trial_days: Number(event.target.value) })} /></label><label className="label">Maximum locations<input className="field" type="number" min="1" placeholder="Unlimited" value={planDraft.max_locations ?? ""} onChange={(event) => setPlanDraft({ ...planDraft, max_locations: event.target.value ? Number(event.target.value) : null })} /></label><label className="label" style={{ gridColumn: "1 / -1" }}>Included features <span className="muted text-xs">one feature per line</span><textarea className="field" rows={4} value={planDraft.features.join("\n")} onChange={(event) => setPlanDraft({ ...planDraft, features: event.target.value.split("\n").map((feature) => feature.trim()).filter(Boolean) })} /></label><label className="label"><span>Published</span><input type="checkbox" checked={planDraft.active} onChange={(event) => setPlanDraft({ ...planDraft, active: event.target.checked })} /></label><div><button className="btn" disabled={planSaving}>{planSaving ? "Saving…" : editingPlanId ? "Update plan" : "Create plan"}</button></div></form></section>
+    <section className="panel overflow-auto"><div className="prototype-section-head"><div><h2>Plan catalogue</h2><p>Platform-owned commercial plans are the source for tenant subscriptions. Public plan content is rendered by Platform Home.</p></div><button type="button" className="btn-secondary" onClick={() => editPlan()}>New plan</button></div><table><thead><tr><th>Plan</th><th>Price</th><th>Locations</th><th>Trial</th><th>Included features</th><th>Status</th><th>Actions</th></tr></thead><tbody>{plans.map((plan) => <tr key={plan.id}><td><strong>{plan.name}</strong><div className="muted text-xs">{plan.code} · {plan.description}</div></td><td>{planMoney(plan)}{plan.price_cents > 0 && <span className="muted text-xs"> / {plan.interval}</span>}</td><td>{plan.max_locations === null ? "Unlimited" : `Up to ${plan.max_locations}`}</td><td>{plan.trial_days} days</td><td>{plan.features.join(" · ") || "—"}</td><td><Badge tone={plan.active ? "good" : "warn"}>{plan.active ? "Active" : "Inactive"}</Badge></td><td><button type="button" className="btn-secondary" onClick={() => editPlan(plan)}>Edit</button></td></tr>)}</tbody></table>{!plans.length && <p className="p-4 muted">No plans are configured. Run the platform migrations to seed the default catalogue.</p>}</section>
+    <section className="panel overflow-auto mt-5"><div className="prototype-section-head"><div><h2>Tenant subscriptions</h2><p>Changing a subscription updates the tenant's commercial account and is recorded in the platform audit trail.</p></div><form className="prototype-filter-bar" onSubmit={(event) => { event.preventDefault(); void load(1); }}><input className="field" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tenants…" aria-label="Search tenants" /><select className="field" value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter subscription status"><option value="all">All statuses</option><option value="trialing">Trialing</option><option value="active">Active</option><option value="paused">Paused</option><option value="past_due">Past due</option><option value="canceled">Canceled</option><option value="not_configured">Not configured</option></select><button className="btn-secondary" type="submit">Search</button></form></div>{loading && <p className="p-4 muted">Loading tenant subscriptions…</p>}<table><thead><tr><th>Tenant</th><th>Current plan</th><th>Status</th><th>Trial / period</th><th>Change subscription</th></tr></thead><tbody>{data.items.map((row) => { const draft = drafts[row.organization_id] || { plan_code: "", status: "trialing" }; return <tr key={row.organization_id}><td><strong>{row.organization_name}</strong><div className="muted text-xs">/{row.slug}</div></td><td>{row.subscription?.plan?.name || row.legacy_plan_code || "Unconfigured"}</td><td><Badge tone={row.subscription_status === "active" ? "good" : row.subscription_status === "past_due" ? "danger" : "warn"}>{row.subscription_status.replaceAll("_", " ")}</Badge></td><td>{row.subscription?.trial_ends_at ? `Trial ends ${new Date(row.subscription.trial_ends_at).toLocaleDateString()}` : row.subscription?.current_period_end ? `Renews ${new Date(row.subscription.current_period_end).toLocaleDateString()}` : "—"}</td><td><div className="prototype-inline-field"><select className="field" value={draft.plan_code} onChange={(event) => setDrafts((current) => ({ ...current, [row.organization_id]: { ...draft, plan_code: event.target.value } }))} aria-label={`Plan for ${row.organization_name}`}>{activePlans.map((plan) => <option key={plan.code} value={plan.code}>{plan.name}</option>)}</select><select className="field" value={draft.status} onChange={(event) => setDrafts((current) => ({ ...current, [row.organization_id]: { ...draft, status: event.target.value } }))} aria-label={`Status for ${row.organization_name}`}><option value="trialing">Trialing</option><option value="active">Active</option><option value="paused">Paused</option><option value="past_due">Past due</option><option value="canceled">Canceled</option></select><button type="button" className="btn-secondary" disabled={saving === row.organization_id} onClick={() => void saveSubscription(row.organization_id)}>{saving === row.organization_id ? "Saving…" : "Save"}</button></div></td></tr>; })}</tbody></table>{!loading && !data.items.length && <p className="p-4 muted">No tenant subscriptions match this filter.</p>}<Pager data={data} load={(page) => void load(page)} /></section>
+  </>;
 }
 
 type JobsData = {

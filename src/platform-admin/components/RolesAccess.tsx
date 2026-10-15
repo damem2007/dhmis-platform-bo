@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '../lib/api';
+import { LoadingOverlay } from './LoadingOverlay';
 
 type Domain = 'tenant' | 'platform';
 type Page<T> = { page: number; size: number; total: number; pages: number; items: T[] };
@@ -19,6 +20,7 @@ type ModuleGroup = { key: string; name: string; resources: ResourceGroup[] };
 type EffectivePerson = { id: string; name: string; email?: string; role?: string; assignments?: { role: string; scope: string; location_id: string | null }[] };
 
 const emptyPage = <T,>(): Page<T> => ({ page: 1, size: 10, total: 0, pages: 0, items: [] });
+const permissionPageSizeOptions = [25, 50, 100, 200] as const;
 const tone = (status: string) => status === 'published' || status === 'approved' || status === 'applied' ? 'good' : status === 'pending' ? 'info' : status === 'rejected' || status === 'conflicted' ? 'danger' : 'neutral';
 const baseActions = new Set(['read', 'create', 'update']);
 const actionLabel = (action: string) => action.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -129,10 +131,16 @@ export function RolesAccess({ domain: initialDomain, staffHref = '/admin/setting
   const [draftGrants, setDraftGrants] = useState<Record<string, Grant>>({});
   const [search, setSearch] = useState('');
   const permissionRequest = useRef(0);
+  const catalogueRequest = useRef(0);
+  const catalogueMeta = useRef({ pages: 0, size: 50 });
+  const catalogueHydrated = useRef(false);
+  const catalogueHydrating = useRef(false);
   const [permissionFilter, setPermissionFilter] = useState<'all' | 'granted' | 'high' | 'fourEyes' | 'changed'>('all');
   const [permissionPage, setPermissionPage] = useState(1);
+  const [permissionPageSize, setPermissionPageSize] = useState(50);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [newRoleOpen, setNewRoleOpen] = useState(false);
   const [checkKey, setCheckKey] = useState('');
   const [checkUser, setCheckUser] = useState('');
@@ -151,6 +159,9 @@ export function RolesAccess({ domain: initialDomain, staffHref = '/admin/setting
     setCheckUser('');
     setDecision(null);
     setCatalogue([]);
+    catalogueMeta.current = { pages: 0, size: 50 };
+    catalogueHydrated.current = false;
+    catalogueHydrating.current = false;
     setEffectivePeople([]);
     setMessage('');
   }
@@ -162,9 +173,9 @@ export function RolesAccess({ domain: initialDomain, staffHref = '/admin/setting
     setSelectedId(next?.id || '');
     setDraftGrants(Object.fromEntries((next?.grants || []).map((grant) => [grant.permission_key, grant])));
   }
-  async function loadPermissions(page = permissionPage) {
+  async function loadPermissions(page = permissionPage, size = permissionPageSize) {
     const requestId = ++permissionRequest.current;
-    const query = new URLSearchParams({ domain, page: String(page), size: '50' });
+    const query = new URLSearchParams({ domain, page: String(page), size: String(size) });
     if (search) query.set('search', search);
     const result = await api<Page<Permission>>(`${prefix}/permissions?${query}`);
     // Refreshes and search submissions can overlap. Only the latest request
@@ -173,6 +184,7 @@ export function RolesAccess({ domain: initialDomain, staffHref = '/admin/setting
     if (requestId !== permissionRequest.current) return;
     setPermissions(result);
     setPermissionPage(page);
+    setPermissionPageSize(size);
   }
   async function loadPermissionRows(filters: Record<string, string>) {
     const firstQuery = new URLSearchParams({ domain, page: '1', size: '50', ...filters });
@@ -184,7 +196,41 @@ export function RolesAccess({ domain: initialDomain, staffHref = '/admin/setting
     }
     return rows;
   }
-  async function loadCatalogue() { setCatalogue(await loadPermissionRows({})); }
+  async function loadCatalogue(loadAll = false) {
+    if (loadAll && (catalogueHydrated.current || catalogueHydrating.current)) return;
+    if (loadAll && catalogueMeta.current.pages > 1) {
+      catalogueHydrating.current = true;
+      const requestId = ++catalogueRequest.current;
+      const { pages, size } = catalogueMeta.current;
+      window.setTimeout(() => {
+        void (async () => {
+          for (let page = 2; page <= pages; page += 1) {
+            const query = new URLSearchParams({ domain, page: String(page), size: String(size) });
+            const result = await api<Page<Permission>>(`${prefix}/permissions?${query}`);
+            if (requestId !== catalogueRequest.current) return;
+            setCatalogue((current) => {
+              const known = new Set(current.map((permission) => permission.key));
+              return [...current, ...result.items.filter((permission) => !known.has(permission.key))];
+            });
+          }
+          if (requestId === catalogueRequest.current) {
+            catalogueHydrated.current = true;
+            catalogueHydrating.current = false;
+          }
+        })().catch(() => { if (requestId === catalogueRequest.current) catalogueHydrating.current = false; });
+      }, 0);
+      return;
+    }
+    const requestId = ++catalogueRequest.current;
+    const firstQuery = new URLSearchParams({ domain, page: '1', size: String(permissionPageSize) });
+    const first = await api<Page<Permission>>(`${prefix}/permissions?${firstQuery}`);
+    if (requestId !== catalogueRequest.current) return;
+    catalogueMeta.current = { pages: first.pages, size: first.size || permissionPageSize };
+    catalogueHydrated.current = first.pages <= 1;
+    setCatalogue(first.items);
+    if (!loadAll || first.pages <= 1) return;
+    window.setTimeout(() => { void loadCatalogue(true); }, 0);
+  }
   async function loadEffectivePeople() {
     try {
       if (domain === 'tenant') {
@@ -210,12 +256,35 @@ export function RolesAccess({ domain: initialDomain, staffHref = '/admin/setting
   }
   async function refresh() {
     setBusy(true);
+    setLoading(true);
     setMessage('');
-    try { await Promise.all([loadRoles(), loadPermissions(), loadCatalogue(), loadEffectivePeople(), loadCurrentActor(), loadRequests(), loadHistory(), loadPolicy()]); }
-    catch (error) { setMessage(error instanceof Error ? error.message : 'Roles and access could not be loaded'); }
-    finally { setBusy(false); }
+    try {
+      // The role list is the P0 shell for this screen. Render it immediately;
+      // the visible permission page and catalogue first page hydrate without
+      // holding the page behind a combined request.
+      await loadRoles();
+      setLoading(false);
+      setBusy(false);
+      void Promise.all([
+        loadPermissions(),
+        loadCatalogue(),
+        loadEffectivePeople(),
+        loadCurrentActor(),
+        loadRequests(),
+        loadHistory(),
+        loadPolicy(),
+      ]).catch((error) => setMessage(error instanceof Error ? error.message : 'Roles and access could not be loaded'));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Roles and access could not be loaded');
+      setLoading(false);
+      setBusy(false);
+    }
   }
   useEffect(() => { void refresh(); }, [activeDomain]);
+  useEffect(() => {
+    if (loading || !['compare', 'effective'].includes(tab) || catalogueHydrated.current) return;
+    void loadCatalogue(true);
+  }, [loading, tab]);
   useEffect(() => {
     if (tab !== 'approvals') return;
     void api(`${prefix}/notifications/seen`, {})
@@ -406,6 +475,8 @@ export function RolesAccess({ domain: initialDomain, staffHref = '/admin/setting
     await act(async () => { await api(`${prefix}/four-eyes-rules`, { rules: normalizedRules(ruleDrafts).map(({ matches: _matches, governed: _governed, overlaps: _overlaps, ...rule }) => rule), reason: ruleReason }, 'PUT'); setRuleReason(''); await loadRequests(); setTab('approvals'); });
   }
 
+  if (loading) return <LoadingOverlay label="Loading roles and permissions…" />;
+
   return <section className="rbac-page" aria-busy={busy}>
     <div className="prototype-page-header rbac-page-header">
       <div>
@@ -450,7 +521,7 @@ export function RolesAccess({ domain: initialDomain, staffHref = '/admin/setting
                 <div className="rbac-module-body">{module.resources.map((resource) => { const level = resourceLevel(resource, draftGrants); return <div className="rbac-resource-row" key={resource.key}><div><strong>{resource.name}</strong><code>{resource.key}</code></div><div className="rbac-resource-controls"><span className="rbac-level-control" role="group" aria-label={`${resource.name} access`}><button type="button" aria-pressed={level === 'n'} disabled={selected.locked} onClick={() => setResourceLevel(resource, 'n')}>No access</button><button type="button" aria-pressed={level === 'r'} disabled={selected.locked} onClick={() => setResourceLevel(resource, 'r')}>Read only</button><button type="button" aria-pressed={level === 'w'} disabled={selected.locked} onClick={() => setResourceLevel(resource, 'w')}>Read &amp; write</button></span></div><div className="rbac-action-chips">{resource.permissions.filter((permission) => !baseActions.has(permission.action)).map((permission) => { const grant = draftGrants[permission.key]; const isAllowed = grant?.effect === 'allow'; const isDenied = grant?.effect === 'deny'; const requiresRead = level === 'n'; return <button type="button" key={permission.key} className={`rbac-action-chip ${isAllowed ? 'allowed' : ''} ${isDenied ? 'denied' : ''} ${permission.risk >= 3 ? 'high-risk' : ''}`} disabled={selected.locked || requiresRead} title={permission.key} aria-label={`${actionLabel(permission.action)}: ${isDenied ? 'denied' : isAllowed ? 'allowed' : 'off'}${requiresRead ? ', requires read' : ''}`} onClick={() => cycleAction(permission, resource)}>{isAllowed ? '✓ ' : isDenied ? '✕ ' : ''}{actionLabel(permission.action)}{permission.requires.length ? ' 🛡' : ''}{permission.restricted ? ' 🔒' : ''}</button>; })}</div></div>; })}</div>
               </details>;
             })}</div>
-            <div className="prototype-pagination"><span>Page {permissions.page} of {permissions.pages || 1} · {permissions.total} permissions</span><button className="btn-secondary" disabled={permissions.page <= 1} onClick={() => void loadPermissions(permissions.page - 1)}>Previous</button><button className="btn-secondary" disabled={permissions.page >= permissions.pages} onClick={() => void loadPermissions(permissions.page + 1)}>Next</button></div>
+            <div className="prototype-pagination"><label className="label">Rows<select className="field" value={permissionPageSize} aria-label="Permissions per page" onChange={(event) => { const size = Number(event.target.value); void loadPermissions(1, size); }}>{permissionPageSizeOptions.map((size) => <option key={size} value={size}>{size}</option>)}</select></label><span>Page {permissions.page} of {permissions.pages || 1} · {permissions.total} permissions</span><button className="btn-secondary" disabled={permissions.page <= 1} onClick={() => void loadPermissions(permissions.page - 1)}>Previous</button><button className="btn-secondary" disabled={permissions.page >= permissions.pages} onClick={() => void loadPermissions(permissions.page + 1)}>Next</button></div>
           </>}
         </section>
         <aside className="panel rbac-review"><h2>Review changes</h2><p className="muted text-sm">{selected?.locked ? 'No pending changes. Edits appear here with their impact before they take effect.' : `${Object.keys(draftGrants).length} direct grants. Dependencies, scope, deny, SoD, and four-eyes rules are validated by the backend.`}</p>{selected && !selected.locked && <form className="rbac-review-form" onSubmit={submitChange}><label className="label"><strong>Change reason</strong> (required)<input className="field" name="reason" minLength={8} placeholder="Why is this changing?" required /></label><button className="btn w-full" disabled={busy}>Save policy</button><button className="btn-secondary w-full" type="button" disabled={busy} onClick={discardChanges}>Discard changes</button><label className="flex gap-2 text-xs"><input type="checkbox" name="acknowledge" /> Acknowledge reported SoD conflicts</label></form>}</aside>

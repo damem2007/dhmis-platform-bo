@@ -135,39 +135,53 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
 
 //header helper
   async function load(requestedPage = tenantPage, requestedPageSize = tenantPageSize) {
-    setState({ type: "loading" });
-    try {
-      const [organizationResult, adapterDefaults, integrationRequests, integrationStatus, regions, approvals] =
-        await Promise.all([
-          page === "tenants"
-            ? api<OrganizationPage>(`/platform/organizations/query?page=${requestedPage}&page_size=${requestedPageSize}&search=${encodeURIComponent(tenantSearch)}${tenantStatusFilter !== "all" ? `&status=${encodeURIComponent(tenantStatusFilter)}` : ""}${tenantPlanFilter !== "all" ? `&plan=${encodeURIComponent(tenantPlanFilter)}` : ""}`)
-            : api<Organization[]>("/platform/organizations"),
-          api<AdapterDefault[]>("/platform/adapter-defaults"),
-          api<IntegrationRequest[]>("/platform/integration-requests"),
-          api<IntegrationStatus[]>("/platform/integrations/status"),
-          api<PlatformRegion[]>("/platform/regions").catch(() => []),
-          api<ApprovalNotificationFeed>("/platform/rbac/notifications").catch(() => ({ items: [], unread_count: 0 })),
-        ]);
-      setApprovalFeed(approvals);
+    const keepShell = state.type === "ready";
+    // Keep the authenticated shell mounted while data is refreshed. The
+    // tenant list and platform widgets are section data, not route guards.
+    if (!keepShell) {
       setState({
         type: "ready",
-        organizations: Array.isArray(organizationResult) ? organizationResult : organizationResult.items,
-        adapterDefaults,
-        integrationRequests,
-        integrationStatus,
-        regions,
+        organizations: [],
+        adapterDefaults: [],
+        integrationRequests: [],
+        integrationStatus: [],
+        regions: [],
       });
-      if (!Array.isArray(organizationResult)) {
-        setTenantPage(organizationResult.page);
-        setTenantPageSize(organizationResult.page_size);
-        setTenantTotal(organizationResult.total);
+    }
+    try {
+      // Keep the platform shell independent from the tenant catalogue. Only
+      // pages that render tenant rows need this request; settings and detail
+      // pages can paint immediately and load their own section data on demand.
+      const organizationsVisible = ["overview", "tenants", "onboarding", "support"].includes(page);
+      const organizationRequest = !organizationsVisible
+        ? [] as Organization[]
+        : page === "tenants"
+          ? await api<OrganizationPage>(`/platform/organizations/query?page=${requestedPage}&page_size=${requestedPageSize}&search=${encodeURIComponent(tenantSearch)}${tenantStatusFilter !== "all" ? `&status=${encodeURIComponent(tenantStatusFilter)}` : ""}${tenantPlanFilter !== "all" ? `&plan=${encodeURIComponent(tenantPlanFilter)}` : ""}`)
+          : await api<Organization[]>("/platform/organizations");
+      setState((current) => current.type === "ready" ? {
+        ...current,
+        organizations: Array.isArray(organizationRequest) ? organizationRequest : organizationRequest.items,
+      } : current);
+      if (!Array.isArray(organizationRequest)) {
+        setTenantPage(organizationRequest.page);
+        setTenantPageSize(organizationRequest.page_size);
+        setTenantTotal(organizationRequest.total);
       }
+      const integrationsVisible = page === "overview" || page === "settings-integrations";
+      const regionsVisible = page === "onboarding";
+      void Promise.all([
+        page === "settings-integrations" ? api<AdapterDefault[]>("/platform/adapter-defaults") : Promise.resolve([] as AdapterDefault[]),
+        integrationsVisible ? api<IntegrationRequest[]>("/platform/integration-requests") : Promise.resolve([] as IntegrationRequest[]),
+        integrationsVisible ? api<IntegrationStatus[]>("/platform/integrations/status") : Promise.resolve([] as IntegrationStatus[]),
+        regionsVisible ? api<PlatformRegion[]>("/platform/regions").catch(() => []) : Promise.resolve([] as PlatformRegion[]),
+        api<ApprovalNotificationFeed>("/platform/rbac/notifications").catch(() => ({ items: [], unread_count: 0 })),
+      ]).then(([adapterDefaults, integrationRequests, integrationStatus, regions, approvals]) => {
+        setApprovalFeed(approvals);
+        setState((current) => current.type === "ready" ? { ...current, adapterDefaults, integrationRequests, integrationStatus, regions } : current);
+      }).catch((reason) => setNotice({ message: reason instanceof Error ? reason.message : "Secondary platform data could not be loaded", state: "ready" }));
     } catch (reason) {
-      setState({
-        type: "error",
-        message:
-          reason instanceof Error ? reason.message : "Platform request failed",
-      });
+      if (keepShell) setNotice({ message: reason instanceof Error ? reason.message : "Platform request failed", state: "ready" });
+      else setState({ type: "error", message: reason instanceof Error ? reason.message : "Platform request failed" });
     }
   }
 
@@ -325,9 +339,11 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
         region: form.get("region"),
         location_name: form.get("location"),
         location_address: form.get("location_address"),
+        location_phone: form.get("location_phone") || "",
         location_latitude: form.get("location_latitude") ? Number(form.get("location_latitude")) : null,
         location_longitude: form.get("location_longitude") ? Number(form.get("location_longitude")) : null,
         location_osm_place_id: form.get("location_osm_place_id"),
+        location_timezone: form.get("location_timezone") || "America/Vancouver",
         admin_name: form.get("admin_name"),
         admin_email: form.get("admin_email"),
         visibility: "organization",
@@ -588,6 +604,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
                 <input
                   className="field"
                   name="password"
+                  data-password-toggle-managed="true"
                   type={showPassword ? "text" : "password"}
                   autoComplete={state.type === "login" ? "current-password" : "new-password"}
                   minLength={state.type === "login" ? 1 : 12}
@@ -595,6 +612,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
                 />
                 <button
                   type="button"
+                  data-password-toggle="true"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword((visible) => !visible)}
                 >
@@ -727,9 +745,11 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
   const matchedPage = [
     "overview",
     "onboarding",
+    "billing-plans",
     "jobs",
     "incidents",
     "support",
+    "support-activity",
     "settings-practice",
     "settings-integrations",
     "settings-staff",
@@ -758,7 +778,7 @@ export default function PlatformAdminApp({ page }: { page: PlatformPage }) {
 
   return (
     <div className={`platform-admin app${sidebarCollapsed ? " platform-sidebar-collapsed" : ""}`}>
-      {state.type === "ready" && notice?.state === "ready" && <Toast message={notice.message} onDismiss={() => setNotice(null)} />}
+      <Toast message={notice?.state === "ready" ? notice.message : ""} onDismiss={() => setNotice(null)} />
       {isSandboxEnvironment && (
         <div className="platform-sandbox sand">
           <span><strong>Development sandbox</strong> · Synthetic records · no live payments, claims, or signatures</span>

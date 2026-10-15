@@ -23,6 +23,8 @@ export function OnboardingPage({ model }: { model: PlatformPageModel }) {
     onboardingTarget, setOnboardingTarget,
   } = model;
   const [onboardingRegion, setOnboardingRegion] = useState("CA");
+  const [onboardingTimezone, setOnboardingTimezone] = useState("America/Toronto");
+  const defaultTimezone = onboardingRegion === "CA" ? "America/Toronto" : "UTC";
   const onboardingStage = (organization: (typeof state.organizations)[number]) => organization.status === "active" ? "Activated" : organization.status.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
   return (<>
     {actionBusy === "provision" && (
@@ -52,7 +54,7 @@ export function OnboardingPage({ model }: { model: PlatformPageModel }) {
         />
       </Field>
       <Field label="Region">
-        <select className="field" name="region" value={onboardingRegion} onChange={(event) => setOnboardingRegion(event.target.value)} required>
+        <select className="field" name="region" value={onboardingRegion} onChange={(event) => { setOnboardingRegion(event.target.value); setOnboardingTimezone(event.target.value === "CA" ? "America/Toronto" : "UTC"); }} required>
           {(state.type === "ready" ? state.regions.filter((region) => region.enabled) : []).map((region) => (
             <option key={region.code} value={region.code}>{region.code} · {region.name}</option>
           ))}
@@ -66,7 +68,15 @@ export function OnboardingPage({ model }: { model: PlatformPageModel }) {
           region={onboardingRegion}
           inputName="location_address"
           placeholder="Search by street, city or postal code…"
+          onSelectionChange={(result) => setOnboardingTimezone(result?.timezone || defaultTimezone)}
         />
+      </Field>
+      <Field label="Clinic phone">
+        <input className="field" name="location_phone" type="tel" placeholder="e.g. (604) 555-0142" />
+      </Field>
+      <Field label="Timezone">
+        <input className="field" name="location_timezone" value={onboardingTimezone} readOnly required />
+        <p className="mt-1 text-xs"><span className="prototype-badge prototype-badge-warn">Verify timezone</span> <span className="muted">Derived from the selected address before provisioning.</span></p>
       </Field>
       <Field label="Administrator name">
         <input className="field" name="admin_name" required />
@@ -94,6 +104,7 @@ export function OnboardingPage({ model }: { model: PlatformPageModel }) {
           Patient Portal
         </label>
       </fieldset>
+      <label className="platform-checkbox-grid" style={{ gridColumn: "1 / -1" }}><span><input type="checkbox" name="timezone_verified" required /> I verified that this timezone is correct for the selected location.</span></label>
       <div className="platform-form-actions"><button className="btn" disabled={Boolean(actionBusy)} aria-busy={actionBusy === "provision"}>{actionBusy === "provision" ? (onboardingTarget ? "Completing onboarding…" : "Provisioning tenant…") : onboardingTarget ? "Complete onboarding" : "Provision tenant"}</button></div>
     </form>
     <section className="platform-card mt-5 overflow-auto"><div className="platform-card-header platform-onboarding-header"><div><h2>Tenants in onboarding</h2><span className="muted">{filteredOnboardingOrganizations.length} matching records</span></div><form className="prototype-filter-bar" onSubmit={(event) => event.preventDefault()}><input className="field" value={onboardingSearch} onChange={(event) => setOnboardingSearch(event.target.value)} placeholder="Search tenants…" aria-label="Search onboarding tenants" /><select className="field" value={onboardingStageFilter} onChange={(event) => setOnboardingStageFilter(event.target.value)} aria-label="Onboarding stage"><option value="all">All stages</option>{onboardingStageOptions.map((stage) => <option key={stage} value={stage}>{stage}</option>)}</select></form></div><table><thead><tr><th>Tenant</th><th>Plan</th><th>Stage</th><th>Signed up</th><th>CSM</th><th>Last activity</th><th>Blocker</th><th>Actions</th></tr></thead><tbody>{onboardingOrganizations.map((o) => <tr key={o.id}><td><strong>{o.name}</strong></td><td>{o.commercial?.plan_code || "—"}</td><td><span className="prototype-badge">{onboardingStage(o)}</span></td><td>—</td><td>—</td><td>—</td><td>{o.last_error || "—"}</td><td>{o.status === "migrated" ? <button type="button" className="btn-secondary" onClick={() => { setOnboardingTarget(o); document.getElementById("new-tenant-form")?.scrollIntoView({ behavior: "smooth" }); }}>Complete setup</button> : <a className="btn-secondary" href="/admin/tenants/">Open tenant</a>}</td></tr>)}</tbody></table>{!filteredOnboardingOrganizations.length && <p className="p-4 muted">No onboarding tenants match this filter.</p>}<p className="p-4 muted text-sm">Signup dates, CSM ownership, last activity, booking and patient activation telemetry are not available from the control-plane API.</p><div className="prototype-pagination"><span>{filteredOnboardingOrganizations.length ? `${(currentOnboardingPage - 1) * onboardingPageSize + 1}–${Math.min(currentOnboardingPage * onboardingPageSize, filteredOnboardingOrganizations.length)} of ${filteredOnboardingOrganizations.length}` : "0–0 of 0"}</span><button type="button" className="btn-secondary" disabled={currentOnboardingPage <= 1} onClick={() => setOnboardingPage((v) => Math.max(1, v - 1))}>Previous</button><button type="button" className="btn-secondary" disabled={currentOnboardingPage >= onboardingPages} onClick={() => setOnboardingPage((v) => Math.min(onboardingPages, v + 1))}>Next</button></div></section>

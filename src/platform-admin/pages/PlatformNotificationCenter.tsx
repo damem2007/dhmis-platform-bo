@@ -121,7 +121,7 @@ export function PlatformNotificationCenter() {
           {group.map((item) => <article key={`${item.kind}-${item.request_id || item.id || item.created_at}`} className={`platform-notification-item is-${item.severity || "info"}`}>
             <span className={`approval-bell-icon is-${category(item)}`}>{icon(item)}</span>
             <div className="platform-notification-copy"><strong>{item.title}</strong><p>{item.detail}</p><time dateTime={item.created_at}>{relativeTime(item.created_at)}</time></div>
-            {item.request_id ? <a href="/admin/settings/roles/?tab=approvals" className="platform-notification-cta">{cta(item)} <span aria-hidden="true">→</span></a> : <span className="platform-notification-cta">{cta(item)} <span aria-hidden="true">→</span></span>}
+            {item.request_id ? <a href="/admin/settings/roles/?tab=approvals" className="platform-notification-cta">{cta(item)} <span aria-hidden="true">→</span></a> : item.target_url ? <a href={item.target_url} className="platform-notification-cta">{cta(item)} <span aria-hidden="true">→</span></a> : <span className="platform-notification-cta">{cta(item)} <span aria-hidden="true">→</span></span>}
           </article>)}
         </Fragment>)}
       </div>

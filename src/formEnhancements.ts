@@ -16,12 +16,17 @@ function clearLoading(button: HTMLButtonElement) {
 }
 
 function addPasswordToggle(input: HTMLInputElement) {
+  // React-controlled auth fields manage their own visibility state.
+  if (input.dataset.passwordToggleManaged === "true") return;
   if (input.dataset.passwordToggleReady === "true") return;
   const parent = input.parentElement;
   if (!parent) return;
   input.dataset.passwordToggleReady = "true";
   parent.classList.add("password-toggle-field");
   input.classList.add("password-toggle-input");
+  // Auth screens may render their own controlled visibility button. Reuse it
+  // instead of appending a second button on top of the existing control.
+  if (parent.querySelector<HTMLButtonElement>('button[data-password-toggle="true"]')) return;
   const button = document.createElement("button");
   button.type = "button";
   button.className = "password-toggle-button";

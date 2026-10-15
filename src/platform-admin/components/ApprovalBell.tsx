@@ -21,6 +21,7 @@ export type ApprovalNotification = {
   severity?: 'danger' | 'warning' | 'info';
   cta_label?: string;
   created_at: string;
+  target_url?: string;
   counted?: boolean;
   seen?: boolean;
   unread?: boolean;
@@ -28,6 +29,15 @@ export type ApprovalNotification = {
 
 export type ApprovalNotificationFeed = { items: ApprovalNotification[]; unread_count: number };
 type SystemNotificationFeed = { items: ApprovalNotification[]; unread_count: number; page: number; pages: number };
+
+function sortNotifications(items: ApprovalNotification[]) {
+  return [...items].sort((left, right) => {
+    const rightTime = new Date(right.created_at).getTime();
+    const leftTime = new Date(left.created_at).getTime();
+    if (rightTime !== leftTime) return rightTime - leftTime;
+    return String(right.id || right.request_id || right.title).localeCompare(String(left.id || left.request_id || left.title));
+  });
+}
 
 /** Load the combined approval and operational feed used by both the bell and Settings > Notifications. */
 export async function loadPlatformNotificationFeed(systemPage = 1, systemSize = 10) {
@@ -41,7 +51,7 @@ export async function loadPlatformNotificationFeed(systemPage = 1, systemSize = 
   }));
   const systemItems = system.items.map((item) => ({ ...item, kind: `system:${item.kind}` }));
   return {
-    items: [...approvalItems, ...systemItems],
+    items: sortNotifications([...approvalItems, ...systemItems]),
     unread_count: approvals.unread_count + system.unread_count,
     pages: Math.max(1, system.pages || 1),
   };
@@ -151,7 +161,7 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
       const approvalItems = approvals.items.map((item) => ({ ...item, severity: item.status === 'rejected' || item.status === 'conflicted' || item.status === 'expired' ? 'danger' as const : item.kind === 'action' || item.kind === 'waiting' ? 'warning' as const : 'info' as const }));
       const systemItems = system.items.map((item) => ({ ...item, kind: `system:${item.kind}` }));
       setSystemPages(Math.max(1, system.pages || 1));
-      setFeed({ items: [...approvalItems, ...systemItems], unread_count: approvals.unread_count + system.unread_count });
+      setFeed({ items: sortNotifications([...approvalItems, ...systemItems]), unread_count: approvals.unread_count + system.unread_count });
       return;
     }
     const result = await loadPlatformNotificationFeed(systemPage, 10);
@@ -180,11 +190,32 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
   }
 
   useEffect(() => {
-    void load();
+    // Notifications are secondary shell data. Schedule the first feed fetch
+    // after the page can paint, while still loading immediately when the bell
+    // is opened or the window regains focus.
+    let idleHandle: number | undefined;
+    if (systemPage === 1) {
+      idleHandle = typeof window.requestIdleCallback === 'function'
+        ? window.requestIdleCallback(() => void load(), { timeout: 1500 })
+        : window.setTimeout(() => void load(), 750);
+    } else {
+      // Pagination is an explicit interaction and should not inherit the
+      // initial idle delay.
+      void load();
+    }
     const refresh = () => void load();
     window.addEventListener('focus', refresh);
     window.addEventListener('dhmis:rbac-updated', refresh);
-    return () => { window.removeEventListener('focus', refresh); window.removeEventListener('dhmis:rbac-updated', refresh); };
+    window.addEventListener('dhmis:notifications-updated', refresh);
+    return () => {
+      if (idleHandle !== undefined) {
+        if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleHandle);
+        else window.clearTimeout(idleHandle);
+      }
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('dhmis:rbac-updated', refresh);
+      window.removeEventListener('dhmis:notifications-updated', refresh);
+    };
   }, [prefix, systemPage, domain]);
   useEffect(() => {
     function dismiss(event: MouseEvent | KeyboardEvent) {
@@ -217,7 +248,7 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
     });
     return [...groups.entries()].map(([label, grouped]) => <Fragment key={label}>
       <div className="approval-bell-group-label">{label}</div>
-      {grouped.map((item) => <button key={`${item.kind}-${item.request_id || item.id || item.created_at}`} type="button" role={menu ? 'menuitem' : undefined} className={`${item.kind === 'waiting' ? 'is-waiting' : ''} ${item.severity ? `is-${item.severity}` : ''}`} onClick={() => item.request_id ? void reviewApproval(item) : (markRead(item), setOpen(false), setCenterOpen(false))}>
+      {grouped.map((item) => <button key={`${item.kind}-${item.request_id || item.id || item.created_at}`} type="button" role={menu ? 'menuitem' : undefined} className={`${item.kind === 'waiting' ? 'is-waiting' : ''} ${item.severity ? `is-${item.severity}` : ''}`} onClick={() => item.request_id ? void reviewApproval(item) : item.target_url ? (markRead(item), window.location.assign(item.target_url)) : (markRead(item), setOpen(false), setCenterOpen(false))}>
         <span className={`approval-bell-icon is-${notificationCategory(item)}`}>{notificationIcon(item)}</span>
         <span className="approval-bell-copy"><strong>{item.title}</strong><small>{item.detail}</small><time dateTime={item.created_at}>{relativeTime(item.created_at)}</time></span>
         {(!menu || notificationCta(item) !== 'View notification') && <span className="approval-bell-item-cta">{notificationCta(item)} <span aria-hidden="true">→</span></span>}
@@ -226,7 +257,7 @@ export function ApprovalBell({ domain, approvalsHref }: { domain: 'tenant' | 'pl
   }
 
   return <div className="approval-bell" ref={root}>
-    <button type="button" aria-label={`Approvals and notifications${unreadCount ? `, ${unreadCount} need attention` : ''}`} aria-haspopup="dialog" aria-expanded={open || centerOpen} onClick={() => setOpen((value) => !value)}>
+    <button type="button" aria-label={`Approvals and notifications${unreadCount ? `, ${unreadCount} need attention` : ''}`} aria-haspopup="dialog" aria-expanded={open || centerOpen} onClick={() => setOpen((value) => { const next = !value; if (next) void load(); return next; })}>
       <Bell size={17} aria-hidden="true" />
       {unreadCount > 0 && <span aria-hidden="true">{unreadCount > 99 ? '99+' : unreadCount}</span>}
     </button>

@@ -7,6 +7,7 @@ export type GeocodeResult = {
   latitude: number;
   longitude: number;
   type: string;
+  timezone?: string;
   address?: Record<string, string>;
 };
 

@@ -6,6 +6,7 @@ export type PlatformPage =
   | "jobs"
   | "incidents"
   | "support"
+  | "support-activity"
   | "platform-audit"
   | "feature-flags"
   | "settings-practice"
@@ -24,6 +25,7 @@ export const PLATFORM_PAGE_TITLES: Record<PlatformPage, string> = {
   jobs: 'DHMIS · Jobs & Queues',
   incidents: 'DHMIS · Incidents',
   support: 'DHMIS · Platform Support',
+  'support-activity': 'DHMIS · Support Activity',
   'platform-audit': 'DHMIS · Platform Audit',
   'feature-flags': 'DHMIS · Feature Flags',
   'settings-practice': 'DHMIS · Practice Policy',
@@ -43,6 +45,7 @@ export const PLATFORM_PAGE_META: Record<PlatformPage, { title: string; descripti
   jobs: { title: 'Jobs & queues', description: 'Background processing across every tenant.' },
   incidents: { title: 'Incidents', description: 'Platform-wide service health and incident response.' },
   support: { title: 'Support', description: 'Tenant support queue and audited administrator recovery.' },
+  'support-activity': { title: 'Support activity', description: 'Audited ticket lifecycle events across the support pool.' },
   'platform-audit': { title: 'Platform audit', description: 'Security and control-plane activity across the platform.' },
   'feature-flags': { title: 'Feature flags', description: 'Platform and tenant capability rollout controls.' },
   'settings-practice': { title: 'Practice policy', description: 'Platform policy defaults inherited by newly provisioned tenants.' },
@@ -64,7 +67,7 @@ export const PLATFORM_SETTINGS_NAV: Array<[PlatformPage, string, string]> = [
   ['settings-notifications', 'Notifications', '/admin/settings/notifications/'],
 ];
 
-export const PLATFORM_PROTOTYPE_PAGES: Exclude<PlatformPage, 'overview' | 'tenants' | 'onboarding' | 'support' | 'settings-integrations'>[] = [
-  'billing-plans', 'jobs', 'incidents', 'platform-audit', 'feature-flags',
+export const PLATFORM_PROTOTYPE_PAGES: Exclude<PlatformPage, 'overview' | 'tenants' | 'onboarding' | 'support' | 'support-activity' | 'settings-integrations'>[] = [
+  'jobs', 'incidents', 'platform-audit', 'feature-flags',
   'settings-practice', 'settings-staff', 'settings-templates', 'settings-audit', 'settings-roles', 'settings-notifications',
 ];

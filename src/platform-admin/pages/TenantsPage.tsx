@@ -9,6 +9,7 @@ type TenantLocation = {
   id: string;
   name: string;
   address: string;
+  phone: string;
   latitude: number | null;
   longitude: number | null;
   osm_place_id: string;
@@ -25,6 +26,9 @@ function TenantLocationsEditor({ organizationId, region }: { organizationId: str
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [adding, setAdding] = useState(false);
+  const [newTimezone, setNewTimezone] = useState(region === "CA" ? "America/Toronto" : "UTC");
+  const [timezoneByLocation, setTimezoneByLocation] = useState<Record<string, string>>({});
+  const defaultTimezone = region === "CA" ? "America/Toronto" : "UTC";
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +52,7 @@ function TenantLocationsEditor({ organizationId, region }: { organizationId: str
         {
           name: form.get("location_name"),
           address: form.get("location_address"),
+          phone: form.get("location_phone") || "",
           latitude: form.get("location_latitude") ? Number(form.get("location_latitude")) : null,
           longitude: form.get("location_longitude") ? Number(form.get("location_longitude")) : null,
           osm_place_id: form.get("location_osm_place_id") || "",
@@ -79,10 +84,11 @@ function TenantLocationsEditor({ organizationId, region }: { organizationId: str
         {
           name: form.get("location_name"),
           address: form.get("location_address"),
+          phone: form.get("location_phone") || "",
           latitude: form.get("location_latitude") ? Number(form.get("location_latitude")) : null,
           longitude: form.get("location_longitude") ? Number(form.get("location_longitude")) : null,
           osm_place_id: form.get("location_osm_place_id") || "",
-          timezone: form.get("timezone") || "America/Vancouver",
+          timezone: form.get("timezone") || defaultTimezone,
           chairs: String(form.get("chairs") || "Op 1, Op 2, Op 3").split(",").map((chair) => chair.trim()).filter(Boolean),
           opening_hour: Number(form.get("opening_hour") || 8),
           closing_hour: Number(form.get("closing_hour") || 18),
@@ -91,6 +97,7 @@ function TenantLocationsEditor({ organizationId, region }: { organizationId: str
       );
       setLocations((current) => [...current, created]);
       setAdding(false);
+      setNewTimezone(defaultTimezone);
       setMessage("Location added. You can now activate the tenant.");
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Location could not be added");
@@ -114,12 +121,13 @@ function TenantLocationsEditor({ organizationId, region }: { organizationId: str
         <form className="tenant-location-editor" onSubmit={(event) => void addLocation(event)}>
           <div className="prototype-form-grid">
             <Field label="Location name"><input className="field" name="location_name" placeholder="Vancouver clinic" required /></Field>
-            <Field label="Address"><LocationAutocomplete region={region} inputName="location_address" required /></Field>
-            <Field label="Timezone"><input className="field" name="timezone" defaultValue="America/Vancouver" required /></Field>
+            <Field label="Address"><LocationAutocomplete region={region} inputName="location_address" required onSelectionChange={(result) => setNewTimezone(result?.timezone || defaultTimezone)} /></Field><Field label="Phone"><input className="field" name="location_phone" type="tel" placeholder="e.g. (604) 555-0142" /></Field>
+            <Field label="Timezone"><input className="field" name="timezone" value={newTimezone} readOnly required /><p className="mt-1 text-xs"><span className="prototype-badge prototype-badge-warn">Verify timezone</span> <span className="muted">Derived from the selected address before saving.</span></p></Field>
             <Field label="Operatories (comma separated)"><input className="field" name="chairs" defaultValue="Op 1, Op 2, Op 3" required /></Field>
             <Field label="Opening hour"><input className="field" name="opening_hour" type="number" min="0" max="23" defaultValue="8" required /></Field>
             <Field label="Closing hour"><input className="field" name="closing_hour" type="number" min="1" max="24" defaultValue="18" required /></Field>
           </div>
+          <label className="text-sm" style={{ gridColumn: "1 / -1" }}><input type="checkbox" name="timezone_verified" required /> I verified that this timezone is correct for the selected location.</label>
           <div className="tenant-location-actions"><button className="btn" disabled={Boolean(busy)} aria-busy={busy === "new"}>{busy === "new" ? "Adding location…" : "Add location"}</button></div>
         </form>
       )}
@@ -133,13 +141,15 @@ function TenantLocationsEditor({ organizationId, region }: { organizationId: str
             <form onSubmit={(event) => void saveLocation(event, location)}>
               <div className="prototype-form-grid">
                 <Field label="Location name"><input className="field" name="location_name" defaultValue={location.name} required /></Field>
-                <Field label="Address"><LocationAutocomplete region={region} inputName="location_address" initialValue={location.address} initialLatitude={location.latitude} initialLongitude={location.longitude} initialPlaceId={location.osm_place_id} /></Field>
-                <Field label="Timezone"><input className="field" name="timezone" defaultValue={location.timezone} required /></Field>
+                <Field label="Address"><LocationAutocomplete region={region} inputName="location_address" initialValue={location.address} initialLatitude={location.latitude} initialLongitude={location.longitude} initialPlaceId={location.osm_place_id} onSelectionChange={(result) => setTimezoneByLocation((current) => ({ ...current, [location.id]: result?.timezone || defaultTimezone }))} /></Field>
+                <Field label="Phone"><input className="field" name="location_phone" type="tel" defaultValue={location.phone || ""} /></Field>
+                <Field label="Timezone"><input className="field" name="timezone" value={timezoneByLocation[location.id] ?? location.timezone} readOnly required /><p className="mt-1 text-xs"><span className="prototype-badge prototype-badge-warn">Verify timezone</span> <span className="muted">Derived from the selected address before saving.</span></p></Field>
                 <Field label="Operatories (comma separated)"><input className="field" name="chairs" defaultValue={location.chairs.join(", ")} required /></Field>
                 <Field label="Opening hour"><input className="field" name="opening_hour" type="number" min="0" max="23" defaultValue={location.opening_hour} required /></Field>
                 <Field label="Closing hour"><input className="field" name="closing_hour" type="number" min="1" max="24" defaultValue={location.closing_hour} required /></Field>
               </div>
               {mapUrl && <iframe className="tenant-location-map" title={`Map of ${location.name}`} src={mapUrl} loading="lazy" />}
+              <label className="text-sm"><input type="checkbox" name="timezone_verified" required /> I verified that this timezone is correct for the selected location.</label>
               <div className="tenant-location-actions"><button className="btn" disabled={Boolean(busy)} aria-busy={busy === location.id}>{busy === location.id ? "Saving location…" : "Save location"}</button></div>
             </form>
           </details>
